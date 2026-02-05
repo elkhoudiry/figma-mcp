@@ -1259,6 +1259,42 @@ server.tool(
   }
 );
 
+// Apply Text Style Tool
+server.tool(
+  "apply_text_style",
+  "Apply an existing text style to a text node. Use this to apply typography styles consistently across text nodes.",
+  {
+    nodeId: z.string().describe("The ID of the text node to apply the style to"),
+    styleId: z.string().describe("The ID of the text style to apply (from get_styles)")
+  },
+  async ({ nodeId, styleId }) => {
+    try {
+      const result = await sendCommandToFigma("apply_text_style", {
+        nodeId,
+        styleId
+      });
+      const typedResult = result as { message: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: typedResult.message,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error applying text style: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Get Local Components Tool
 server.tool(
   "get_local_components",
@@ -3176,6 +3212,7 @@ type FigmaCommand =
   | "create_paint_style"
   | "apply_paint_style"
   | "create_text_style"
+  | "apply_text_style"
   | "get_local_components"
   | "get_team_components"
   | "create_component_instance"
@@ -3316,6 +3353,10 @@ type CommandParams = {
     textCase?: "ORIGINAL" | "UPPER" | "LOWER" | "TITLE";
     textDecoration?: "NONE" | "UNDERLINE" | "STRIKETHROUGH";
     boundVariables?: Record<string, { variableId: string }>;
+  };
+  apply_text_style: {
+    nodeId: string;
+    styleId: string;
   };
   get_local_components: Record<string, never>;
   get_team_components: Record<string, never>;

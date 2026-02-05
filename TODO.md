@@ -44,7 +44,7 @@ Last Updated: 2026-02-05
   - Use case: Design system typography
   - Estimated complexity: Medium
 
-- [ ] **`apply_text_style`**
+- [x] **`apply_text_style`** ✅ **COMPLETED**
   - Apply existing text styles to text nodes
   - Parameters: `nodeId`, `styleId`
   - Use case: Apply typography consistently
@@ -203,8 +203,8 @@ Last Updated: 2026-02-05
 ## 📊 Progress Summary
 
 **Total Tasks:** 30
-**Completed:** 10 (33%)
-**Phase 1 (Critical):** 2/3 (67%)
+**Completed:** 11 (37%)
+**Phase 1 (Critical):** 3/3 (100%) ✅
 **Phase 2 (High):** 0/3 (0%)
 **Phase 3 (Medium):** 0/5 (0%)
 **Phase 4 (Nice to Have):** 0/9 (0%)
@@ -216,7 +216,7 @@ Last Updated: 2026-02-05
 
 1. ~~**`apply_paint_style`**~~ ✅ **COMPLETED**
 2. ~~**`create_text_style`**~~ ✅ **COMPLETED**
-3. **`apply_text_style`** - Enable typography workflows (NEXT)
+3. ~~**`apply_text_style`**~~ ✅ **COMPLETED**
 
 ---
 

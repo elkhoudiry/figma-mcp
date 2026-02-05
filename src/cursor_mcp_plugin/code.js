@@ -255,6 +255,8 @@ async function handleCommand(command, params) {
       return await applyPaintStyle(params);
     case "create_text_style":
       return await createTextStyle(params);
+    case "apply_text_style":
+      return await applyTextStyle(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1415,6 +1417,50 @@ async function createTextStyle(params) {
     paragraphSpacing: style.paragraphSpacing,
     textCase: style.textCase,
     textDecoration: style.textDecoration
+  };
+}
+
+async function applyTextStyle(params) {
+  const { nodeId, styleId } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  // Get the node
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (node.type !== "TEXT") {
+    throw new Error(`Node '${node.name}' is not a text node (type: ${node.type})`);
+  }
+
+  // Get the style
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}. Use the style ID from get_styles (e.g., 'S:abc123,').`);
+  }
+
+  if (style.type !== "TEXT") {
+    throw new Error(`Style '${style.name}' is not a text style (type: ${style.type})`);
+  }
+
+  // Apply the text style (must use async setter for dynamic-page access)
+  await node.setTextStyleIdAsync(styleId);
+
+  return {
+    success: true,
+    nodeId: node.id,
+    nodeName: node.name,
+    styleId: style.id,
+    styleName: style.name,
+    message: `Applied text style '${style.name}' to text node '${node.name}'`
   };
 }
 
