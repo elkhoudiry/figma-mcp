@@ -1121,7 +1121,9 @@ async function getStyles() {
       id: style.id,
       name: style.name,
       key: style.key,
-      paint: style.paints[0],
+      description: style.description,
+      paints: style.paints,
+      paintCount: style.paints.length
     })),
     texts: styles.texts.map((style) => ({
       id: style.id,

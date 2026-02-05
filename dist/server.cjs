@@ -863,7 +863,7 @@ server.tool(
 );
 server.tool(
   "get_styles",
-  "Get all styles from the current Figma document",
+  "Get all styles from the current Figma document. Returns all paint layers for color styles, including multi-layer styles (paints array contains all layers from bottom to top).",
   {},
   async () => {
     try {
@@ -890,13 +890,13 @@ server.tool(
 );
 server.tool(
   "create_paint_style",
-  "Create a new paint/color style in Figma. Supports solid colors (hardcoded or variable-bound), gradients, and image fills. This creates a reusable style that can be applied to multiple nodes.",
+  "Create a new paint/color style in Figma with single or multiple paint layers. IMPORTANT: Paint order matters! Paints are layered bottom-to-top: paints[0]=bottom layer (rendered first), paints[1]=middle, paints[n]=top layer. Supports solid colors (hardcoded or variable-bound), gradients, and image fills. Each layer can have its own opacity. Perfect for overlays, glassmorphism, or variable-based themes.",
   {
     name: import_zod.z.string().describe("The name of the style (e.g., 'Primary Blue', 'Brand/Colors/Red')"),
     description: import_zod.z.string().optional().describe("Optional description of the style"),
     paints: import_zod.z.array(
       import_zod.z.object({
-        type: import_zod.z.enum(["SOLID", "GRADIENT_LINEAR", "GRADIENT_RADIAL", "GRADIENT_ANGULAR", "GRADIENT_DIAMOND", "IMAGE"]).describe("Type of paint"),
+        type: import_zod.z.enum(["SOLID", "GRADIENT_LINEAR", "GRADIENT_RADIAL", "GRADIENT_ANGULAR", "GRADIENT_DIAMOND", "IMAGE"]).describe("Type of paint. ORDERING MATTERS: Array index determines layer order (0=bottom, n=top)."),
         color: import_zod.z.object({
           r: import_zod.z.number().min(0).max(1).describe("Red component (0-1)"),
           g: import_zod.z.number().min(0).max(1).describe("Green component (0-1)"),
@@ -923,7 +923,7 @@ server.tool(
         imageHash: import_zod.z.string().optional().describe("Image hash (required for IMAGE type)"),
         scaleMode: import_zod.z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("Image scale mode (for IMAGE type)")
       })
-    ).min(1).describe("Array of paint objects (at least one required)")
+    ).min(1).describe("Array of paint layers in RENDER ORDER (at least one required). CRITICAL: paints[0]=BOTTOM layer (rendered first/behind), paints[n]=TOP layer (rendered last/in front). For overlays, put base color first, then overlay. For glassmorphism, stack from back to front. Order determines visibility!")
   },
   async ({ name, description, paints }) => {
     try {

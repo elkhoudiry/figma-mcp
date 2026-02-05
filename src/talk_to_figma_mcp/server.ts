@@ -1045,7 +1045,7 @@ server.tool(
 // Get Styles Tool
 server.tool(
   "get_styles",
-  "Get all styles from the current Figma document",
+  "Get all styles from the current Figma document. Returns all paint layers for color styles, including multi-layer styles (paints array contains all layers from bottom to top).",
   {},
   async () => {
     try {
@@ -1075,14 +1075,14 @@ server.tool(
 // Create Paint Style Tool
 server.tool(
   "create_paint_style",
-  "Create a new paint/color style in Figma. Supports solid colors (hardcoded or variable-bound), gradients, and image fills. This creates a reusable style that can be applied to multiple nodes.",
+  "Create a new paint/color style in Figma with single or multiple paint layers. IMPORTANT: Paint order matters! Paints are layered bottom-to-top: paints[0]=bottom layer (rendered first), paints[1]=middle, paints[n]=top layer. Supports solid colors (hardcoded or variable-bound), gradients, and image fills. Each layer can have its own opacity. Perfect for overlays, glassmorphism, or variable-based themes.",
   {
     name: z.string().describe("The name of the style (e.g., 'Primary Blue', 'Brand/Colors/Red')"),
     description: z.string().optional().describe("Optional description of the style"),
     paints: z.array(
       z.object({
         type: z.enum(['SOLID', 'GRADIENT_LINEAR', 'GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND', 'IMAGE'])
-          .describe("Type of paint"),
+          .describe("Type of paint. ORDERING MATTERS: Array index determines layer order (0=bottom, n=top)."),
         color: z.object({
           r: z.number().min(0).max(1).describe("Red component (0-1)"),
           g: z.number().min(0).max(1).describe("Green component (0-1)"),
@@ -1111,7 +1111,7 @@ server.tool(
         scaleMode: z.enum(['FILL', 'FIT', 'CROP', 'TILE']).optional()
           .describe("Image scale mode (for IMAGE type)")
       })
-    ).min(1).describe("Array of paint objects (at least one required)")
+    ).min(1).describe("Array of paint layers in RENDER ORDER (at least one required). CRITICAL: paints[0]=BOTTOM layer (rendered first/behind), paints[n]=TOP layer (rendered last/in front). For overlays, put base color first, then overlay. For glassmorphism, stack from back to front. Order determines visibility!")
   },
   async ({ name, description, paints }) => {
     try {
