@@ -968,6 +968,75 @@ server.tool(
   }
 );
 server.tool(
+  "create_text_style",
+  "Create a new text style in Figma with font properties. Supports font family, style, size, letter spacing, line height, paragraph spacing, text case, and text decoration. Perfect for building a typography system.",
+  {
+    name: z.string().describe("The name of the style (e.g., 'Heading/H1', 'Body/Regular')"),
+    description: z.string().optional().describe("Optional description of the style"),
+    fontFamily: z.string().describe("Font family name (e.g., 'Inter', 'Roboto', 'Arial')"),
+    fontStyle: z.string().optional().describe("Font style \u2014 this controls font weight. Maps to Figma's fontName.style. Common values: 'Thin' (100), 'Extra Light' (200), 'Light' (300), 'Regular' (400), 'Medium' (500), 'Semi Bold' (600), 'Bold' (700), 'Extra Bold' (800), 'Black' (900). Some fonts also support 'Italic' variants like 'Bold Italic'. Defaults to 'Regular'."),
+    fontSize: z.number().optional().describe("Font size in pixels (e.g., 16, 24, 32)"),
+    letterSpacing: z.union([
+      z.number(),
+      z.object({
+        value: z.number(),
+        unit: z.enum(["PIXELS", "PERCENT"])
+      })
+    ]).optional().describe("Letter spacing - a number (pixels) or { value, unit } object"),
+    lineHeight: z.union([
+      z.number(),
+      z.string(),
+      z.object({
+        value: z.number().optional(),
+        unit: z.enum(["PIXELS", "PERCENT", "AUTO"])
+      })
+    ]).optional().describe("Line height - a number (pixels), 'auto', or { value, unit } object"),
+    paragraphSpacing: z.number().optional().describe("Spacing between paragraphs in pixels"),
+    textCase: z.enum(["ORIGINAL", "UPPER", "LOWER", "TITLE"]).optional().describe("Text case transformation"),
+    textDecoration: z.enum(["NONE", "UNDERLINE", "STRIKETHROUGH"]).optional().describe("Text decoration"),
+    boundVariables: z.record(
+      z.object({
+        variableId: z.string().describe("The variable ID to bind")
+      })
+    ).optional().describe("Bind variables to text style properties. Keys are property names (e.g., 'fontSize', 'letterSpacing', 'lineHeight', 'paragraphSpacing'). Values contain the variableId to bind.")
+  },
+  async ({ name, description, fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing, textCase, textDecoration, boundVariables }) => {
+    try {
+      const result = await sendCommandToFigma("create_text_style", {
+        name,
+        description,
+        fontFamily,
+        fontStyle,
+        fontSize,
+        letterSpacing,
+        lineHeight,
+        paragraphSpacing,
+        textCase,
+        textDecoration,
+        boundVariables
+      });
+      const typedResult = result;
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created text style "${typedResult.name}" with ID: ${typedResult.id} and key: ${typedResult.key}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating text style: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+server.tool(
   "get_local_components",
   "Get all local components from the Figma document",
   {},

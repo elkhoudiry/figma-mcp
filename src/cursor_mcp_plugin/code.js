@@ -251,6 +251,8 @@ async function handleCommand(command, params) {
       return await createPaintStyle(params);
     case "apply_paint_style":
       return await applyPaintStyle(params);
+    case "create_text_style":
+      return await createTextStyle(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1131,8 +1133,15 @@ async function getStyles() {
       id: style.id,
       name: style.name,
       key: style.key,
-      fontSize: style.fontSize,
+      description: style.description,
       fontName: style.fontName,
+      fontSize: style.fontSize,
+      letterSpacing: style.letterSpacing,
+      lineHeight: style.lineHeight,
+      paragraphSpacing: style.paragraphSpacing,
+      textCase: style.textCase,
+      textDecoration: style.textDecoration,
+      boundVariables: style.boundVariables,
     })),
     effects: styles.effects.map((style) => ({
       id: style.id,
@@ -1316,6 +1325,94 @@ async function applyPaintStyle(params) {
     styleName: style.name,
     property: property,
     message: `Applied paint style '${style.name}' to ${property} of node '${node.name}'`
+  };
+}
+
+async function createTextStyle(params) {
+  const { name, description, fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing, textCase, textDecoration, boundVariables } = params || {};
+
+  if (!name) {
+    throw new Error("Missing name parameter");
+  }
+
+  if (!fontFamily) {
+    throw new Error("Missing fontFamily parameter");
+  }
+
+  const resolvedFontStyle = fontStyle || "Regular";
+
+  // Load the font before creating the style
+  await figma.loadFontAsync({ family: fontFamily, style: resolvedFontStyle });
+
+  // Create the text style
+  const style = figma.createTextStyle();
+  style.name = name;
+
+  if (description) {
+    style.description = description;
+  }
+
+  style.fontName = { family: fontFamily, style: resolvedFontStyle };
+
+  if (fontSize !== undefined) {
+    style.fontSize = parseFloat(fontSize);
+  }
+
+  if (letterSpacing !== undefined) {
+    if (typeof letterSpacing === 'object') {
+      style.letterSpacing = letterSpacing;
+    } else {
+      style.letterSpacing = { value: parseFloat(letterSpacing), unit: "PIXELS" };
+    }
+  }
+
+  if (lineHeight !== undefined) {
+    if (typeof lineHeight === 'object') {
+      style.lineHeight = lineHeight;
+    } else if (lineHeight === "auto" || lineHeight === "AUTO") {
+      style.lineHeight = { unit: "AUTO" };
+    } else {
+      style.lineHeight = { value: parseFloat(lineHeight), unit: "PIXELS" };
+    }
+  }
+
+  if (paragraphSpacing !== undefined) {
+    style.paragraphSpacing = parseFloat(paragraphSpacing);
+  }
+
+  if (textCase) {
+    style.textCase = textCase;
+  }
+
+  if (textDecoration) {
+    style.textDecoration = textDecoration;
+  }
+
+  // Bind variables if specified (e.g., fontSize, letterSpacing, lineHeight)
+  if (boundVariables) {
+    for (const [field, binding] of Object.entries(boundVariables)) {
+      if (binding && binding.variableId) {
+        const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+        if (!variable) {
+          throw new Error(`Variable not found: ${binding.variableId} for field '${field}'`);
+        }
+        style.setBoundVariable(field, variable);
+      }
+    }
+  }
+
+  return {
+    id: style.id,
+    name: style.name,
+    key: style.key,
+    description: style.description,
+    fontName: style.fontName,
+    fontSize: style.fontSize,
+    letterSpacing: style.letterSpacing,
+    lineHeight: style.lineHeight,
+    paragraphSpacing: style.paragraphSpacing,
+    textCase: style.textCase,
+    textDecoration: style.textDecoration
   };
 }
 

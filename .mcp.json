@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "TalkToFigma": {
+      "command": "bun",
+      "args": ["/Users/ahmed/gits/cursor-talk-to-figma-mcp/dist/server.js"]
+    }
+  }
+}
