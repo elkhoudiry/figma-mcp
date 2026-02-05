@@ -1295,6 +1295,302 @@ server.tool(
   }
 );
 
+// Get Node Styles Tool
+server.tool(
+  "get_node_styles",
+  "Get all styles currently applied to a node. Returns fill, stroke, text, and effect style IDs and names if applied.",
+  {
+    nodeId: z.string().describe("The ID of the node to inspect")
+  },
+  async ({ nodeId }) => {
+    try {
+      const result = await sendCommandToFigma("get_node_styles", { nodeId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting node styles: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Create Effect Style Tool
+server.tool(
+  "create_effect_style",
+  "Create shadow and blur effect styles in Figma. Supports DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, and BACKGROUND_BLUR. Multiple effects can be stacked. Perfect for elevation systems and consistent shadows.",
+  {
+    name: z.string().describe("The name of the style (e.g., 'Elevation/Level 1', 'Blur/Background')"),
+    description: z.string().optional().describe("Optional description of the style"),
+    effects: z.array(
+      z.object({
+        type: z.enum(["DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR"])
+          .describe("Type of effect"),
+        color: z.object({
+          r: z.number().min(0).max(1).describe("Red (0-1)"),
+          g: z.number().min(0).max(1).describe("Green (0-1)"),
+          b: z.number().min(0).max(1).describe("Blue (0-1)"),
+          a: z.number().min(0).max(1).optional().describe("Alpha (0-1), defaults to 1")
+        }).optional().describe("Shadow color (for DROP_SHADOW and INNER_SHADOW)"),
+        offset: z.object({
+          x: z.number().describe("X offset in pixels"),
+          y: z.number().describe("Y offset in pixels")
+        }).optional().describe("Shadow offset (for DROP_SHADOW and INNER_SHADOW)"),
+        radius: z.number().min(0).describe("Blur radius in pixels"),
+        spread: z.number().optional().describe("Shadow spread in pixels (for DROP_SHADOW and INNER_SHADOW)"),
+        visible: z.boolean().optional().describe("Whether the effect is visible (defaults to true)"),
+        blendMode: z.string().optional().describe("Blend mode (e.g., 'NORMAL', 'MULTIPLY')")
+      })
+    ).min(1).describe("Array of effects to apply. Multiple effects are stacked."),
+    boundVariables: z.record(
+      z.object({
+        variableId: z.string().describe("The variable ID to bind")
+      })
+    ).optional().describe("Bind variables to effect style properties.")
+  },
+  async ({ name, description, effects, boundVariables }) => {
+    try {
+      const result = await sendCommandToFigma("create_effect_style", {
+        name,
+        description,
+        effects,
+        boundVariables
+      });
+      const typedResult = result as { id: string; name: string; key: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created effect style "${typedResult.name}" with ID: ${typedResult.id} and key: ${typedResult.key}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating effect style: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Apply Effect Style Tool
+server.tool(
+  "apply_effect_style",
+  "Apply an existing effect style to a node. Use this to apply shadows, blurs, and other effects consistently.",
+  {
+    nodeId: z.string().describe("The ID of the node to apply the effect style to"),
+    styleId: z.string().describe("The ID of the effect style to apply (from get_styles)")
+  },
+  async ({ nodeId, styleId }) => {
+    try {
+      const result = await sendCommandToFigma("apply_effect_style", {
+        nodeId,
+        styleId
+      });
+      const typedResult = result as { message: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: typedResult.message,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error applying effect style: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Update Paint Style Tool
+server.tool(
+  "update_paint_style",
+  "Modify an existing paint style. Can update name, description, and/or paints. Supports the same paint formats as create_paint_style including variable-bound colors, gradients, and image fills.",
+  {
+    styleId: z.string().describe("The ID of the paint style to update (from get_styles)"),
+    name: z.string().optional().describe("New name for the style"),
+    description: z.string().optional().describe("New description for the style"),
+    paints: z.array(
+      z.object({
+        type: z.enum(['SOLID', 'GRADIENT_LINEAR', 'GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND', 'IMAGE'])
+          .describe("Type of paint"),
+        color: z.object({
+          r: z.number().min(0).max(1),
+          g: z.number().min(0).max(1),
+          b: z.number().min(0).max(1)
+        }).optional().describe("Color for SOLID paints"),
+        boundVariables: z.object({
+          color: z.object({
+            variableId: z.string()
+          }).optional()
+        }).optional().describe("Bind color to a variable"),
+        opacity: z.number().min(0).max(1).optional().describe("Paint opacity (0-1)"),
+        gradientStops: z.array(z.object({
+          position: z.number().min(0).max(1),
+          color: z.object({
+            r: z.number().min(0).max(1),
+            g: z.number().min(0).max(1),
+            b: z.number().min(0).max(1),
+            a: z.number().min(0).max(1).optional()
+          })
+        })).optional().describe("Gradient stops"),
+        gradientTransform: z.array(z.array(z.number())).optional(),
+        imageHash: z.string().optional(),
+        scaleMode: z.enum(['FILL', 'FIT', 'CROP', 'TILE']).optional()
+      })
+    ).optional().describe("New paints array (replaces existing paints)")
+  },
+  async ({ styleId, name, description, paints }) => {
+    try {
+      const result = await sendCommandToFigma("update_paint_style", { styleId, name, description, paints });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error updating paint style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Update Text Style Tool
+server.tool(
+  "update_text_style",
+  "Modify an existing text style. Can update any combination of properties. Font weight is controlled via fontStyle parameter (e.g., 'Bold', 'Medium', 'Regular').",
+  {
+    styleId: z.string().describe("The ID of the text style to update (from get_styles)"),
+    name: z.string().optional().describe("New name for the style"),
+    description: z.string().optional().describe("New description for the style"),
+    fontFamily: z.string().optional().describe("New font family"),
+    fontStyle: z.string().optional().describe("Font style — controls weight. Values: 'Thin' (100), 'Extra Light' (200), 'Light' (300), 'Regular' (400), 'Medium' (500), 'Semi Bold' (600), 'Bold' (700), 'Extra Bold' (800), 'Black' (900)."),
+    fontSize: z.number().optional().describe("New font size in pixels"),
+    letterSpacing: z.union([
+      z.number(),
+      z.object({ value: z.number(), unit: z.enum(["PIXELS", "PERCENT"]) })
+    ]).optional().describe("Letter spacing"),
+    lineHeight: z.union([
+      z.number(),
+      z.string(),
+      z.object({ value: z.number().optional(), unit: z.enum(["PIXELS", "PERCENT", "AUTO"]) })
+    ]).optional().describe("Line height"),
+    paragraphSpacing: z.number().optional().describe("Paragraph spacing in pixels"),
+    textCase: z.enum(["ORIGINAL", "UPPER", "LOWER", "TITLE"]).optional(),
+    textDecoration: z.enum(["NONE", "UNDERLINE", "STRIKETHROUGH"]).optional(),
+    boundVariables: z.record(
+      z.object({ variableId: z.string() })
+    ).optional().describe("Bind variables to text style properties (fontSize, letterSpacing, lineHeight, paragraphSpacing)")
+  },
+  async ({ styleId, name, description, fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing, textCase, textDecoration, boundVariables }) => {
+    try {
+      const result = await sendCommandToFigma("update_text_style", { styleId, name, description, fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing, textCase, textDecoration, boundVariables });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error updating text style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Update Effect Style Tool
+server.tool(
+  "update_effect_style",
+  "Modify an existing effect style. Can update name, description, and/or effects array. Supports DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR.",
+  {
+    styleId: z.string().describe("The ID of the effect style to update (from get_styles)"),
+    name: z.string().optional().describe("New name for the style"),
+    description: z.string().optional().describe("New description for the style"),
+    effects: z.array(
+      z.object({
+        type: z.enum(["DROP_SHADOW", "INNER_SHADOW", "LAYER_BLUR", "BACKGROUND_BLUR"]),
+        color: z.object({
+          r: z.number().min(0).max(1),
+          g: z.number().min(0).max(1),
+          b: z.number().min(0).max(1),
+          a: z.number().min(0).max(1).optional()
+        }).optional(),
+        offset: z.object({
+          x: z.number(),
+          y: z.number()
+        }).optional(),
+        radius: z.number().min(0),
+        spread: z.number().optional(),
+        visible: z.boolean().optional(),
+        blendMode: z.string().optional()
+      })
+    ).optional().describe("New effects array (replaces existing effects)"),
+    boundVariables: z.record(
+      z.object({ variableId: z.string() })
+    ).optional().describe("Bind variables to effect style properties")
+  },
+  async ({ styleId, name, description, effects, boundVariables }) => {
+    try {
+      const result = await sendCommandToFigma("update_effect_style", { styleId, name, description, effects, boundVariables });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error updating effect style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Delete Style Tool
+server.tool(
+  "delete_style",
+  "Remove a style from the document. Works with paint, text, effect, and grid styles. Warning: nodes using this style will lose the style binding.",
+  {
+    styleId: z.string().describe("The ID of the style to delete (from get_styles)")
+  },
+  async ({ styleId }) => {
+    try {
+      const result = await sendCommandToFigma("delete_style", { styleId });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error deleting style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Detach Style Tool
+server.tool(
+  "detach_style",
+  "Remove a style binding from a node but keep the visual properties. The node retains its current appearance but is no longer linked to the style.",
+  {
+    nodeId: z.string().describe("The ID of the node to detach the style from"),
+    styleType: z.enum(["fill", "stroke", "text", "effect"]).describe("Which style type to detach")
+  },
+  async ({ nodeId, styleType }) => {
+    try {
+      const result = await sendCommandToFigma("detach_style", { nodeId, styleType });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error detaching style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
 // Get Local Components Tool
 server.tool(
   "get_local_components",
@@ -3213,6 +3509,14 @@ type FigmaCommand =
   | "apply_paint_style"
   | "create_text_style"
   | "apply_text_style"
+  | "get_node_styles"
+  | "create_effect_style"
+  | "apply_effect_style"
+  | "update_paint_style"
+  | "update_text_style"
+  | "update_effect_style"
+  | "delete_style"
+  | "detach_style"
   | "get_local_components"
   | "get_team_components"
   | "create_component_instance"
@@ -3357,6 +3661,78 @@ type CommandParams = {
   apply_text_style: {
     nodeId: string;
     styleId: string;
+  };
+  get_node_styles: {
+    nodeId: string;
+  };
+  create_effect_style: {
+    name: string;
+    description?: string;
+    effects: Array<{
+      type: "DROP_SHADOW" | "INNER_SHADOW" | "LAYER_BLUR" | "BACKGROUND_BLUR";
+      color?: { r: number; g: number; b: number; a?: number };
+      offset?: { x: number; y: number };
+      radius: number;
+      spread?: number;
+      visible?: boolean;
+      blendMode?: string;
+    }>;
+    boundVariables?: Record<string, { variableId: string }>;
+  };
+  apply_effect_style: {
+    nodeId: string;
+    styleId: string;
+  };
+  update_paint_style: {
+    styleId: string;
+    name?: string;
+    description?: string;
+    paints?: Array<{
+      type: 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'GRADIENT_ANGULAR' | 'GRADIENT_DIAMOND' | 'IMAGE';
+      color?: { r: number; g: number; b: number };
+      boundVariables?: { color?: { variableId: string } };
+      opacity?: number;
+      gradientStops?: Array<{ position: number; color: { r: number; g: number; b: number; a?: number } }>;
+      gradientTransform?: number[][];
+      imageHash?: string;
+      scaleMode?: 'FILL' | 'FIT' | 'CROP' | 'TILE';
+    }>;
+  };
+  update_text_style: {
+    styleId: string;
+    name?: string;
+    description?: string;
+    fontFamily?: string;
+    fontStyle?: string;
+    fontSize?: number;
+    letterSpacing?: number | { value: number; unit: "PIXELS" | "PERCENT" };
+    lineHeight?: number | string | { value?: number; unit: "PIXELS" | "PERCENT" | "AUTO" };
+    paragraphSpacing?: number;
+    textCase?: "ORIGINAL" | "UPPER" | "LOWER" | "TITLE";
+    textDecoration?: "NONE" | "UNDERLINE" | "STRIKETHROUGH";
+    boundVariables?: Record<string, { variableId: string }>;
+  };
+  update_effect_style: {
+    styleId: string;
+    name?: string;
+    description?: string;
+    effects?: Array<{
+      type: "DROP_SHADOW" | "INNER_SHADOW" | "LAYER_BLUR" | "BACKGROUND_BLUR";
+      color?: { r: number; g: number; b: number; a?: number };
+      offset?: { x: number; y: number };
+      radius: number;
+      spread?: number;
+      visible?: boolean;
+      blendMode?: string;
+    }>;
+    boundVariables?: Record<string, { variableId: string }>;
+  };
+  delete_style: {
+    styleId: string;
+  };
+  detach_style: {
+    nodeId: string;
+    styleType: "fill" | "stroke" | "text" | "effect";
   };
   get_local_components: Record<string, never>;
   get_team_components: Record<string, never>;

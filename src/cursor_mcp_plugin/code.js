@@ -257,6 +257,22 @@ async function handleCommand(command, params) {
       return await createTextStyle(params);
     case "apply_text_style":
       return await applyTextStyle(params);
+    case "get_node_styles":
+      return await getNodeStyles(params);
+    case "create_effect_style":
+      return await createEffectStyle(params);
+    case "apply_effect_style":
+      return await applyEffectStyle(params);
+    case "update_paint_style":
+      return await updatePaintStyle(params);
+    case "update_text_style":
+      return await updateTextStyle(params);
+    case "update_effect_style":
+      return await updateEffectStyle(params);
+    case "delete_style":
+      return await deleteStyle(params);
+    case "detach_style":
+      return await detachStyle(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1151,6 +1167,9 @@ async function getStyles() {
       id: style.id,
       name: style.name,
       key: style.key,
+      description: style.description,
+      effects: style.effects,
+      boundVariables: style.boundVariables,
     })),
     grids: styles.grids.map((style) => ({
       id: style.id,
@@ -1461,6 +1480,558 @@ async function applyTextStyle(params) {
     styleId: style.id,
     styleName: style.name,
     message: `Applied text style '${style.name}' to text node '${node.name}'`
+  };
+}
+
+async function getNodeStyles(params) {
+  const { nodeId } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  const result = {
+    nodeId: node.id,
+    nodeName: node.name,
+    nodeType: node.type
+  };
+
+  // Get fill style
+  if ("fillStyleId" in node) {
+    const fillStyleId = node.fillStyleId;
+    if (fillStyleId && fillStyleId !== "" && typeof fillStyleId === "string") {
+      const fillStyle = await figma.getStyleByIdAsync(fillStyleId);
+      result.fillStyle = fillStyle ? {
+        id: fillStyle.id,
+        name: fillStyle.name,
+        key: fillStyle.key,
+        type: fillStyle.type
+      } : { id: fillStyleId };
+    }
+  }
+
+  // Get stroke style
+  if ("strokeStyleId" in node) {
+    const strokeStyleId = node.strokeStyleId;
+    if (strokeStyleId && strokeStyleId !== "" && typeof strokeStyleId === "string") {
+      const strokeStyle = await figma.getStyleByIdAsync(strokeStyleId);
+      result.strokeStyle = strokeStyle ? {
+        id: strokeStyle.id,
+        name: strokeStyle.name,
+        key: strokeStyle.key,
+        type: strokeStyle.type
+      } : { id: strokeStyleId };
+    }
+  }
+
+  // Get text style
+  if ("textStyleId" in node) {
+    const textStyleId = node.textStyleId;
+    if (textStyleId && textStyleId !== "" && typeof textStyleId === "string") {
+      const textStyle = await figma.getStyleByIdAsync(textStyleId);
+      result.textStyle = textStyle ? {
+        id: textStyle.id,
+        name: textStyle.name,
+        key: textStyle.key,
+        type: textStyle.type
+      } : { id: textStyleId };
+    }
+  }
+
+  // Get effect style
+  if ("effectStyleId" in node) {
+    const effectStyleId = node.effectStyleId;
+    if (effectStyleId && effectStyleId !== "" && typeof effectStyleId === "string") {
+      const effectStyle = await figma.getStyleByIdAsync(effectStyleId);
+      result.effectStyle = effectStyle ? {
+        id: effectStyle.id,
+        name: effectStyle.name,
+        key: effectStyle.key,
+        type: effectStyle.type
+      } : { id: effectStyleId };
+    }
+  }
+
+  return result;
+}
+
+async function createEffectStyle(params) {
+  const { name, description, effects, boundVariables } = params || {};
+
+  if (!name) {
+    throw new Error("Missing name parameter");
+  }
+
+  if (!effects || !Array.isArray(effects) || effects.length === 0) {
+    throw new Error("Missing or invalid effects parameter - must be a non-empty array");
+  }
+
+  const style = figma.createEffectStyle();
+  style.name = name;
+
+  if (description) {
+    style.description = description;
+  }
+
+  // Format and set effects
+  const formattedEffects = effects.map(effect => {
+    const formatted = {
+      type: effect.type,
+      visible: effect.visible !== undefined ? effect.visible : true
+    };
+
+    // Shadow effects: DROP_SHADOW and INNER_SHADOW
+    if (effect.type === "DROP_SHADOW" || effect.type === "INNER_SHADOW") {
+      formatted.color = {
+        r: parseFloat((effect.color && effect.color.r) || 0),
+        g: parseFloat((effect.color && effect.color.g) || 0),
+        b: parseFloat((effect.color && effect.color.b) || 0),
+        a: parseFloat((effect.color && effect.color.a !== undefined) ? effect.color.a : 1)
+      };
+      formatted.offset = {
+        x: parseFloat((effect.offset && effect.offset.x) || 0),
+        y: parseFloat((effect.offset && effect.offset.y) || 0)
+      };
+      formatted.radius = parseFloat(effect.radius || 0);
+      formatted.spread = parseFloat(effect.spread || 0);
+      formatted.blendMode = effect.blendMode || "NORMAL";
+    }
+
+    // Blur effects: LAYER_BLUR and BACKGROUND_BLUR
+    if (effect.type === "LAYER_BLUR" || effect.type === "BACKGROUND_BLUR") {
+      formatted.radius = parseFloat(effect.radius || 0);
+    }
+
+    return formatted;
+  });
+
+  style.effects = formattedEffects;
+
+  // Bind variables if specified
+  if (boundVariables) {
+    for (const [field, binding] of Object.entries(boundVariables)) {
+      if (binding && binding.variableId) {
+        const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+        if (!variable) {
+          throw new Error(`Variable not found: ${binding.variableId} for field '${field}'`);
+        }
+        style.setBoundVariable(field, variable);
+      }
+    }
+  }
+
+  return {
+    id: style.id,
+    name: style.name,
+    key: style.key,
+    description: style.description,
+    effects: style.effects
+  };
+}
+
+async function applyEffectStyle(params) {
+  const { nodeId, styleId } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!("effectStyleId" in node)) {
+    throw new Error(`Node type '${node.type}' does not support effect styles`);
+  }
+
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}. Use the style ID from get_styles.`);
+  }
+
+  if (style.type !== "EFFECT") {
+    throw new Error(`Style '${style.name}' is not an effect style (type: ${style.type})`);
+  }
+
+  // Use async setter for dynamic-page access
+  await node.setEffectStyleIdAsync(styleId);
+
+  return {
+    success: true,
+    nodeId: node.id,
+    nodeName: node.name,
+    styleId: style.id,
+    styleName: style.name,
+    message: `Applied effect style '${style.name}' to node '${node.name}'`
+  };
+}
+
+async function updatePaintStyle(params) {
+  const { styleId, name, description, paints } = params || {};
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}`);
+  }
+  if (style.type !== "PAINT") {
+    throw new Error(`Style '${style.name}' is not a paint style (type: ${style.type})`);
+  }
+
+  if (name !== undefined) {
+    style.name = name;
+  }
+  if (description !== undefined) {
+    style.description = description;
+  }
+
+  if (paints && Array.isArray(paints) && paints.length > 0) {
+    const formattedPaints = await Promise.all(paints.map(async paint => {
+      if (paint.type === 'SOLID') {
+        if (paint.boundVariables && paint.boundVariables.color && paint.boundVariables.color.variableId) {
+          const variable = await figma.variables.getVariableByIdAsync(paint.boundVariables.color.variableId);
+          if (!variable) {
+            throw new Error(`Variable not found: ${paint.boundVariables.color.variableId}`);
+          }
+          const variableValue = Object.values(variable.valuesByMode)[0];
+          const formattedPaint = {
+            type: 'SOLID',
+            color: {
+              r: parseFloat(variableValue.r || 0),
+              g: parseFloat(variableValue.g || 0),
+              b: parseFloat(variableValue.b || 0)
+            },
+            opacity: parseFloat(paint.opacity !== undefined ? paint.opacity : 1)
+          };
+          return figma.variables.setBoundVariableForPaint(formattedPaint, 'color', variable);
+        } else {
+          return {
+            type: 'SOLID',
+            color: {
+              r: parseFloat((paint.color && paint.color.r) || 0),
+              g: parseFloat((paint.color && paint.color.g) || 0),
+              b: parseFloat((paint.color && paint.color.b) || 0)
+            },
+            opacity: parseFloat(paint.opacity !== undefined ? paint.opacity : 1)
+          };
+        }
+      } else if (paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_RADIAL' ||
+                 paint.type === 'GRADIENT_ANGULAR' || paint.type === 'GRADIENT_DIAMOND') {
+        if (!paint.gradientStops || !Array.isArray(paint.gradientStops)) {
+          throw new Error(`Gradient paint requires gradientStops array`);
+        }
+        return {
+          type: paint.type,
+          gradientStops: paint.gradientStops.map(stop => ({
+            position: parseFloat(stop.position || 0),
+            color: {
+              r: parseFloat((stop.color && stop.color.r) || 0),
+              g: parseFloat((stop.color && stop.color.g) || 0),
+              b: parseFloat((stop.color && stop.color.b) || 0),
+              a: parseFloat((stop.color && stop.color.a !== undefined) ? stop.color.a : 1)
+            }
+          })),
+          gradientTransform: paint.gradientTransform || [[1, 0, 0], [0, 1, 0]]
+        };
+      } else if (paint.type === 'IMAGE') {
+        if (!paint.imageHash) {
+          throw new Error("IMAGE paint requires imageHash");
+        }
+        return {
+          type: 'IMAGE',
+          imageHash: paint.imageHash,
+          scaleMode: paint.scaleMode || 'FILL',
+          opacity: parseFloat(paint.opacity !== undefined ? paint.opacity : 1)
+        };
+      } else {
+        throw new Error(`Unsupported paint type: ${paint.type}`);
+      }
+    }));
+    style.paints = formattedPaints;
+  }
+
+  return {
+    id: style.id,
+    name: style.name,
+    key: style.key,
+    description: style.description,
+    paints: style.paints,
+    message: `Updated paint style '${style.name}'`
+  };
+}
+
+async function updateTextStyle(params) {
+  const { styleId, name, description, fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing, textCase, textDecoration, boundVariables } = params || {};
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}`);
+  }
+  if (style.type !== "TEXT") {
+    throw new Error(`Style '${style.name}' is not a text style (type: ${style.type})`);
+  }
+
+  if (name !== undefined) {
+    style.name = name;
+  }
+  if (description !== undefined) {
+    style.description = description;
+  }
+
+  // Always load the font before modifying any text style property
+  const newFamily = fontFamily || style.fontName.family;
+  const newStyle = fontStyle || style.fontName.style;
+  await figma.loadFontAsync({ family: newFamily, style: newStyle });
+  if (fontFamily !== undefined || fontStyle !== undefined) {
+    style.fontName = { family: newFamily, style: newStyle };
+  }
+
+  if (fontSize !== undefined) {
+    style.fontSize = parseFloat(fontSize);
+  }
+
+  if (letterSpacing !== undefined) {
+    if (typeof letterSpacing === 'object') {
+      style.letterSpacing = letterSpacing;
+    } else {
+      style.letterSpacing = { value: parseFloat(letterSpacing), unit: "PIXELS" };
+    }
+  }
+
+  if (lineHeight !== undefined) {
+    if (typeof lineHeight === 'object') {
+      style.lineHeight = lineHeight;
+    } else if (lineHeight === "auto" || lineHeight === "AUTO") {
+      style.lineHeight = { unit: "AUTO" };
+    } else {
+      style.lineHeight = { value: parseFloat(lineHeight), unit: "PIXELS" };
+    }
+  }
+
+  if (paragraphSpacing !== undefined) {
+    style.paragraphSpacing = parseFloat(paragraphSpacing);
+  }
+
+  if (textCase !== undefined) {
+    style.textCase = textCase;
+  }
+
+  if (textDecoration !== undefined) {
+    style.textDecoration = textDecoration;
+  }
+
+  if (boundVariables) {
+    for (const [field, binding] of Object.entries(boundVariables)) {
+      if (binding && binding.variableId) {
+        const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+        if (!variable) {
+          throw new Error(`Variable not found: ${binding.variableId} for field '${field}'`);
+        }
+        style.setBoundVariable(field, variable);
+      }
+    }
+  }
+
+  return {
+    id: style.id,
+    name: style.name,
+    key: style.key,
+    description: style.description,
+    fontName: style.fontName,
+    fontSize: style.fontSize,
+    letterSpacing: style.letterSpacing,
+    lineHeight: style.lineHeight,
+    paragraphSpacing: style.paragraphSpacing,
+    textCase: style.textCase,
+    textDecoration: style.textDecoration,
+    message: `Updated text style '${style.name}'`
+  };
+}
+
+async function updateEffectStyle(params) {
+  const { styleId, name, description, effects, boundVariables } = params || {};
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}`);
+  }
+  if (style.type !== "EFFECT") {
+    throw new Error(`Style '${style.name}' is not an effect style (type: ${style.type})`);
+  }
+
+  if (name !== undefined) {
+    style.name = name;
+  }
+  if (description !== undefined) {
+    style.description = description;
+  }
+
+  if (effects && Array.isArray(effects) && effects.length > 0) {
+    const formattedEffects = effects.map(effect => {
+      const formatted = {
+        type: effect.type,
+        visible: effect.visible !== undefined ? effect.visible : true
+      };
+
+      if (effect.type === "DROP_SHADOW" || effect.type === "INNER_SHADOW") {
+        formatted.color = {
+          r: parseFloat((effect.color && effect.color.r) || 0),
+          g: parseFloat((effect.color && effect.color.g) || 0),
+          b: parseFloat((effect.color && effect.color.b) || 0),
+          a: parseFloat((effect.color && effect.color.a !== undefined) ? effect.color.a : 1)
+        };
+        formatted.offset = {
+          x: parseFloat((effect.offset && effect.offset.x) || 0),
+          y: parseFloat((effect.offset && effect.offset.y) || 0)
+        };
+        formatted.radius = parseFloat(effect.radius || 0);
+        formatted.spread = parseFloat(effect.spread || 0);
+        formatted.blendMode = effect.blendMode || "NORMAL";
+      }
+
+      if (effect.type === "LAYER_BLUR" || effect.type === "BACKGROUND_BLUR") {
+        formatted.radius = parseFloat(effect.radius || 0);
+      }
+
+      return formatted;
+    });
+    style.effects = formattedEffects;
+  }
+
+  if (boundVariables) {
+    for (const [field, binding] of Object.entries(boundVariables)) {
+      if (binding && binding.variableId) {
+        const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+        if (!variable) {
+          throw new Error(`Variable not found: ${binding.variableId} for field '${field}'`);
+        }
+        style.setBoundVariable(field, variable);
+      }
+    }
+  }
+
+  return {
+    id: style.id,
+    name: style.name,
+    key: style.key,
+    description: style.description,
+    effects: style.effects,
+    message: `Updated effect style '${style.name}'`
+  };
+}
+
+async function deleteStyle(params) {
+  const { styleId } = params || {};
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}`);
+  }
+
+  const styleName = style.name;
+  const styleType = style.type;
+  style.remove();
+
+  return {
+    success: true,
+    styleName: styleName,
+    styleType: styleType,
+    message: `Deleted ${styleType.toLowerCase()} style '${styleName}'`
+  };
+}
+
+async function detachStyle(params) {
+  const { nodeId, styleType } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  if (!styleType || !["fill", "stroke", "text", "effect"].includes(styleType)) {
+    throw new Error("styleType must be one of: 'fill', 'stroke', 'text', 'effect'");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  let detachedStyleName = "";
+
+  if (styleType === "fill") {
+    if (!("fillStyleId" in node)) {
+      throw new Error(`Node type '${node.type}' does not support fill styles`);
+    }
+    const currentId = node.fillStyleId;
+    if (currentId && typeof currentId === "string") {
+      const style = await figma.getStyleByIdAsync(currentId);
+      detachedStyleName = style ? style.name : currentId;
+    }
+    await node.setFillStyleIdAsync("");
+  } else if (styleType === "stroke") {
+    if (!("strokeStyleId" in node)) {
+      throw new Error(`Node type '${node.type}' does not support stroke styles`);
+    }
+    const currentId = node.strokeStyleId;
+    if (currentId && typeof currentId === "string") {
+      const style = await figma.getStyleByIdAsync(currentId);
+      detachedStyleName = style ? style.name : currentId;
+    }
+    await node.setStrokeStyleIdAsync("");
+  } else if (styleType === "text") {
+    if (!("textStyleId" in node)) {
+      throw new Error(`Node type '${node.type}' does not support text styles`);
+    }
+    const currentId = node.textStyleId;
+    if (currentId && typeof currentId === "string") {
+      const style = await figma.getStyleByIdAsync(currentId);
+      detachedStyleName = style ? style.name : currentId;
+    }
+    await node.setTextStyleIdAsync("");
+  } else if (styleType === "effect") {
+    if (!("effectStyleId" in node)) {
+      throw new Error(`Node type '${node.type}' does not support effect styles`);
+    }
+    const currentId = node.effectStyleId;
+    if (currentId && typeof currentId === "string") {
+      const style = await figma.getStyleByIdAsync(currentId);
+      detachedStyleName = style ? style.name : currentId;
+    }
+    await node.setEffectStyleIdAsync("");
+  }
+
+  return {
+    success: true,
+    nodeId: node.id,
+    nodeName: node.name,
+    styleType: styleType,
+    detachedStyle: detachedStyleName,
+    message: `Detached ${styleType} style${detachedStyleName ? ` '${detachedStyleName}'` : ''} from node '${node.name}' (properties preserved)`
   };
 }
 

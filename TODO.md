@@ -56,20 +56,21 @@ Last Updated: 2026-02-05
 
 **Priority: HIGH** - Adds critical design system capabilities
 
-- [ ] **`get_node_styles`**
+- [x] **`get_node_styles`** ✅ **COMPLETED**
   - Get all styles currently applied to a node
   - Returns: `{ fillStyleId, strokeStyleId, textStyleId, effectStyleId }`
   - Use case: Audit styling, understand what's applied
   - Estimated complexity: Low
 
-- [ ] **`create_effect_style`**
+- [x] **`create_effect_style`** ✅ **COMPLETED**
   - Create shadow and blur effect styles
   - Support: DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR
   - Parameters: `name`, `effects` array
+  - Support variable binding
   - Use case: Elevation system, consistent shadows
   - Estimated complexity: Medium
 
-- [ ] **`apply_effect_style`**
+- [x] **`apply_effect_style`** ✅ **COMPLETED**
   - Apply effect styles to nodes
   - Parameters: `nodeId`, `styleId`
   - Use case: Apply shadows/blurs
@@ -81,33 +82,35 @@ Last Updated: 2026-02-05
 
 **Priority: MEDIUM** - Enables style editing and maintenance
 
-- [ ] **`update_paint_style`**
+- [x] **`update_paint_style`** ✅ **COMPLETED**
   - Modify existing paint styles
   - Parameters: `styleId`, `paints`, `name`, `description`
+  - Supports variable-bound colors, gradients, image fills
   - Use case: Rebrand colors, update styles
   - Estimated complexity: Medium
 
-- [ ] **`update_text_style`**
+- [x] **`update_text_style`** ✅ **COMPLETED**
   - Modify existing text styles
-  - Parameters: `styleId`, font properties
+  - Parameters: `styleId`, font properties, `boundVariables`
   - Use case: Update typography system
   - Estimated complexity: Medium
 
-- [ ] **`update_effect_style`**
+- [x] **`update_effect_style`** ✅ **COMPLETED**
   - Modify existing effect styles
-  - Parameters: `styleId`, `effects`
+  - Parameters: `styleId`, `effects`, `boundVariables`
   - Use case: Adjust shadows/blurs
   - Estimated complexity: Medium
 
-- [ ] **`delete_style`**
+- [x] **`delete_style`** ✅ **COMPLETED**
   - Remove styles from document
   - Parameters: `styleId`
-  - Warning: Check for usage before deleting
+  - Works with paint, text, effect, and grid styles
   - Estimated complexity: Low
 
-- [ ] **`detach_style`**
+- [x] **`detach_style`** ✅ **COMPLETED**
   - Remove style from node but keep properties
   - Parameters: `nodeId`, `styleType` ("fill" | "stroke" | "text" | "effect")
+  - Uses async setters for dynamic-page access
   - Use case: Make custom one-off changes
   - Estimated complexity: Low
 
@@ -203,10 +206,10 @@ Last Updated: 2026-02-05
 ## 📊 Progress Summary
 
 **Total Tasks:** 30
-**Completed:** 11 (37%)
+**Completed:** 19 (63%)
 **Phase 1 (Critical):** 3/3 (100%) ✅
-**Phase 2 (High):** 0/3 (0%)
-**Phase 3 (Medium):** 0/5 (0%)
+**Phase 2 (High):** 3/3 (100%) ✅
+**Phase 3 (Medium):** 5/5 (100%) ✅
 **Phase 4 (Nice to Have):** 0/9 (0%)
 **Phase 5 (Future):** 0/3 (0%)
 
