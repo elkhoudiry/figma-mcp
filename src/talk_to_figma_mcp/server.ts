@@ -1142,6 +1142,52 @@ server.tool(
   }
 );
 
+// Apply Paint Style Tool
+server.tool(
+  "apply_paint_style",
+  "Apply an existing paint style to a node's fills or strokes. Use this to quickly apply brand colors and maintain design system consistency.",
+  {
+    nodeId: z.string().describe("The ID of the node to apply the style to"),
+    styleId: z.string().describe("The ID of the paint style to apply"),
+    property: z.enum(["fills", "strokes"]).describe("Whether to apply the style to fills or strokes")
+  },
+  async ({ nodeId, styleId, property }) => {
+    try {
+      const result = await sendCommandToFigma("apply_paint_style", {
+        nodeId,
+        styleId,
+        property
+      });
+      const typedResult = result as {
+        success: boolean;
+        nodeId: string;
+        nodeName: string;
+        styleId: string;
+        styleName: string;
+        property: string;
+        message: string
+      };
+      return {
+        content: [
+          {
+            type: "text",
+            text: typedResult.message,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error applying paint style: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Get Local Components Tool
 server.tool(
   "get_local_components",
@@ -3022,6 +3068,7 @@ type FigmaCommand =
   | "delete_multiple_nodes"
   | "get_styles"
   | "create_paint_style"
+  | "apply_paint_style"
   | "get_local_components"
   | "get_team_components"
   | "create_component_instance"
@@ -3143,6 +3190,11 @@ type CommandParams = {
       imageHash?: string;
       scaleMode?: 'FILL' | 'FIT' | 'CROP' | 'TILE';
     }>;
+  };
+  apply_paint_style: {
+    nodeId: string;
+    styleId: string;
+    property: "fills" | "strokes";
   };
   get_local_components: Record<string, never>;
   get_team_components: Record<string, never>;

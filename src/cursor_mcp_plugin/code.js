@@ -249,6 +249,8 @@ async function handleCommand(command, params) {
       return await getNodePaints(params);
     case "create_paint_style":
       return await createPaintStyle(params);
+    case "apply_paint_style":
+      return await applyPaintStyle(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1259,6 +1261,61 @@ async function createPaintStyle(params) {
     key: style.key,
     description: style.description,
     paints: style.paints
+  };
+}
+
+async function applyPaintStyle(params) {
+  const { nodeId, styleId, property } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  if (!property || (property !== "fills" && property !== "strokes")) {
+    throw new Error("property parameter must be either 'fills' or 'strokes'");
+  }
+
+  // Get the node
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  // Check if node supports the requested property
+  if (!(property in node)) {
+    throw new Error(`Node type '${node.type}' does not support ${property}`);
+  }
+
+  // Get the style
+  const style = await figma.getStyleByIdAsync(styleId);
+  if (!style) {
+    throw new Error(`Style not found with ID: ${styleId}`);
+  }
+
+  // Verify it's a paint style
+  if (style.type !== "PAINT") {
+    throw new Error(`Style '${style.name}' is not a paint style (type: ${style.type})`);
+  }
+
+  // Apply the style (must use async setters for dynamic-page access)
+  if (property === "fills") {
+    await node.setFillStyleIdAsync(styleId);
+  } else {
+    await node.setStrokeStyleIdAsync(styleId);
+  }
+
+  return {
+    success: true,
+    nodeId: node.id,
+    nodeName: node.name,
+    styleId: style.id,
+    styleName: style.name,
+    property: property,
+    message: `Applied paint style '${style.name}' to ${property} of node '${node.name}'`
   };
 }
 

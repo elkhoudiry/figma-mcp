@@ -954,6 +954,42 @@ server.tool(
   }
 );
 server.tool(
+  "apply_paint_style",
+  "Apply an existing paint style to a node's fills or strokes. Use this to quickly apply brand colors and maintain design system consistency.",
+  {
+    nodeId: import_zod.z.string().describe("The ID of the node to apply the style to"),
+    styleId: import_zod.z.string().describe("The ID of the paint style to apply"),
+    property: import_zod.z.enum(["fills", "strokes"]).describe("Whether to apply the style to fills or strokes")
+  },
+  async ({ nodeId, styleId, property }) => {
+    try {
+      const result = await sendCommandToFigma("apply_paint_style", {
+        nodeId,
+        styleId,
+        property
+      });
+      const typedResult = result;
+      return {
+        content: [
+          {
+            type: "text",
+            text: typedResult.message
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error applying paint style: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+server.tool(
   "get_local_components",
   "Get all local components from the Figma document",
   {},
