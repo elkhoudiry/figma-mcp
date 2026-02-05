@@ -247,6 +247,8 @@ async function handleCommand(command, params) {
       return await setNodePaints(params);
     case "get_node_paints":
       return await getNodePaints(params);
+    case "create_paint_style":
+      return await createPaintStyle(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1155,6 +1157,106 @@ async function getLocalComponents() {
       name: component.name,
       key: "key" in component ? component.key : null,
     })),
+  };
+}
+
+async function createPaintStyle(params) {
+  const { name, description, paints } = params || {};
+
+  if (!name) {
+    throw new Error("Missing name parameter");
+  }
+
+  if (!paints || !Array.isArray(paints) || paints.length === 0) {
+    throw new Error("Missing or invalid paints parameter - must be a non-empty array");
+  }
+
+  // Create the paint style
+  const style = figma.createPaintStyle();
+  style.name = name;
+
+  if (description) {
+    style.description = description;
+  }
+
+  // Format and set paints with optional variable binding
+  const formattedPaints = await Promise.all(paints.map(async paint => {
+    let formattedPaint;
+
+    if (paint.type === 'SOLID') {
+      // If boundVariables are specified, use variable binding
+      if (paint.boundVariables && paint.boundVariables.color && paint.boundVariables.color.variableId) {
+        const variable = await figma.variables.getVariableByIdAsync(paint.boundVariables.color.variableId);
+        if (!variable) {
+          throw new Error(`Variable not found: ${paint.boundVariables.color.variableId}`);
+        }
+        // Get the variable's color value for the default mode
+        const variableValue = Object.values(variable.valuesByMode)[0];
+        formattedPaint = {
+          type: 'SOLID',
+          color: {
+            r: parseFloat(variableValue.r || 0),
+            g: parseFloat(variableValue.g || 0),
+            b: parseFloat(variableValue.b || 0)
+          },
+          opacity: parseFloat(paint.opacity !== undefined ? paint.opacity : 1)
+        };
+        // Bind the variable to the paint
+        return figma.variables.setBoundVariableForPaint(formattedPaint, 'color', variable);
+      } else {
+        // Use hardcoded color values
+        formattedPaint = {
+          type: 'SOLID',
+          color: {
+            r: parseFloat((paint.color && paint.color.r) || 0),
+            g: parseFloat((paint.color && paint.color.g) || 0),
+            b: parseFloat((paint.color && paint.color.b) || 0)
+          },
+          opacity: parseFloat(paint.opacity !== undefined ? paint.opacity : 1)
+        };
+        return formattedPaint;
+      }
+    } else if (paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_RADIAL' ||
+               paint.type === 'GRADIENT_ANGULAR' || paint.type === 'GRADIENT_DIAMOND') {
+      if (!paint.gradientStops || !Array.isArray(paint.gradientStops)) {
+        throw new Error(`Gradient paint requires gradientStops array`);
+      }
+      return {
+        type: paint.type,
+        gradientStops: paint.gradientStops.map(stop => ({
+          position: parseFloat(stop.position || 0),
+          color: {
+            r: parseFloat((stop.color && stop.color.r) || 0),
+            g: parseFloat((stop.color && stop.color.g) || 0),
+            b: parseFloat((stop.color && stop.color.b) || 0),
+            a: parseFloat((stop.color && stop.color.a !== undefined) ? stop.color.a : 1)
+          }
+        })),
+        gradientTransform: paint.gradientTransform || [[1, 0, 0], [0, 1, 0]]
+      };
+    } else if (paint.type === 'IMAGE') {
+      if (!paint.imageHash) {
+        throw new Error("IMAGE paint requires imageHash");
+      }
+      return {
+        type: 'IMAGE',
+        imageHash: paint.imageHash,
+        scaleMode: paint.scaleMode || 'FILL',
+        opacity: parseFloat(paint.opacity !== undefined ? paint.opacity : 1)
+      };
+    } else {
+      throw new Error(`Unsupported paint type: ${paint.type}`);
+    }
+  }));
+
+  style.paints = formattedPaints;
+
+  return {
+    id: style.id,
+    name: style.name,
+    key: style.key,
+    description: style.description,
+    paints: style.paints
   };
 }
 

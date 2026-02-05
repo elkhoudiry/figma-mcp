@@ -598,13 +598,13 @@ server.tool(
 // Set Fill Color Tool
 server.tool(
   "set_fill_color",
-  "Set the fill color of a node in Figma can be TextNode or FrameNode",
+  "Set the fill color of a node in Figma (TextNode or FrameNode). Supports RGBA colors with alpha/transparency. All color values are 0-1 range.",
   {
     nodeId: z.string().describe("The ID of the node to modify"),
     r: z.number().min(0).max(1).describe("Red component (0-1)"),
     g: z.number().min(0).max(1).describe("Green component (0-1)"),
     b: z.number().min(0).max(1).describe("Blue component (0-1)"),
-    a: z.number().min(0).max(1).optional().describe("Alpha component (0-1)"),
+    a: z.number().min(0).max(1).optional().describe("Alpha/opacity component (0-1). 0=fully transparent, 1=fully opaque. Optional, defaults to 1."),
   },
   async ({ nodeId, r, g, b, a }: any) => {
     try {
@@ -639,14 +639,14 @@ server.tool(
 // Set Stroke Color Tool
 server.tool(
   "set_stroke_color",
-  "Set the stroke color of a node in Figma",
+  "Set the stroke color of a node in Figma. Supports RGBA colors with alpha/transparency. All color values are 0-1 range.",
   {
     nodeId: z.string().describe("The ID of the node to modify"),
     r: z.number().min(0).max(1).describe("Red component (0-1)"),
     g: z.number().min(0).max(1).describe("Green component (0-1)"),
     b: z.number().min(0).max(1).describe("Blue component (0-1)"),
-    a: z.number().min(0).max(1).optional().describe("Alpha component (0-1)"),
-    weight: z.number().positive().optional().describe("Stroke weight"),
+    a: z.number().min(0).max(1).optional().describe("Alpha/opacity component (0-1). 0=fully transparent, 1=fully opaque. Optional, defaults to 1."),
+    weight: z.number().positive().optional().describe("Stroke weight in pixels"),
   },
   async ({ nodeId, r, g, b, a, weight }: any) => {
     try {
@@ -1065,6 +1065,76 @@ server.tool(
             type: "text",
             text: `Error getting styles: ${error instanceof Error ? error.message : String(error)
               }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Create Paint Style Tool
+server.tool(
+  "create_paint_style",
+  "Create a new paint/color style in Figma. Supports solid colors (hardcoded or variable-bound), gradients, and image fills. This creates a reusable style that can be applied to multiple nodes.",
+  {
+    name: z.string().describe("The name of the style (e.g., 'Primary Blue', 'Brand/Colors/Red')"),
+    description: z.string().optional().describe("Optional description of the style"),
+    paints: z.array(
+      z.object({
+        type: z.enum(['SOLID', 'GRADIENT_LINEAR', 'GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND', 'IMAGE'])
+          .describe("Type of paint"),
+        color: z.object({
+          r: z.number().min(0).max(1).describe("Red component (0-1)"),
+          g: z.number().min(0).max(1).describe("Green component (0-1)"),
+          b: z.number().min(0).max(1).describe("Blue component (0-1)")
+        }).optional().describe("Color for SOLID paints (use this OR boundVariables, not both)"),
+        boundVariables: z.object({
+          color: z.object({
+            variableId: z.string().describe("ID of the color variable to bind (from list_variables)")
+          }).optional().describe("Bind color to a Figma variable instead of hardcoding")
+        }).optional().describe("Bind paint properties to variables instead of using hardcoded values"),
+        opacity: z.number().min(0).max(1).optional().describe("Opacity (0-1), defaults to 1"),
+        gradientStops: z.array(
+          z.object({
+            position: z.number().min(0).max(1).describe("Position along gradient (0-1)"),
+            color: z.object({
+              r: z.number().min(0).max(1),
+              g: z.number().min(0).max(1),
+              b: z.number().min(0).max(1),
+              a: z.number().min(0).max(1).optional()
+            })
+          })
+        ).optional().describe("Gradient stops (required for gradient types)"),
+        gradientTransform: z.array(z.array(z.number())).optional()
+          .describe("Gradient transform matrix (optional, defaults to identity)"),
+        imageHash: z.string().optional().describe("Image hash (required for IMAGE type)"),
+        scaleMode: z.enum(['FILL', 'FIT', 'CROP', 'TILE']).optional()
+          .describe("Image scale mode (for IMAGE type)")
+      })
+    ).min(1).describe("Array of paint objects (at least one required)")
+  },
+  async ({ name, description, paints }) => {
+    try {
+      const result = await sendCommandToFigma("create_paint_style", {
+        name,
+        description,
+        paints
+      });
+      const typedResult = result as { id: string; name: string; key: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created paint style "${typedResult.name}" with ID: ${typedResult.id} and key: ${typedResult.key}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating paint style: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };
@@ -2951,6 +3021,7 @@ type FigmaCommand =
   | "delete_node"
   | "delete_multiple_nodes"
   | "get_styles"
+  | "create_paint_style"
   | "get_local_components"
   | "get_team_components"
   | "create_component_instance"
@@ -3052,6 +3123,27 @@ type CommandParams = {
     nodeIds: string[];
   };
   get_styles: Record<string, never>;
+  create_paint_style: {
+    name: string;
+    description?: string;
+    paints: Array<{
+      type: 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'GRADIENT_ANGULAR' | 'GRADIENT_DIAMOND' | 'IMAGE';
+      color?: { r: number; g: number; b: number };
+      boundVariables?: {
+        color?: {
+          variableId: string;
+        };
+      };
+      opacity?: number;
+      gradientStops?: Array<{
+        position: number;
+        color: { r: number; g: number; b: number; a?: number };
+      }>;
+      gradientTransform?: number[][];
+      imageHash?: string;
+      scaleMode?: 'FILL' | 'FIT' | 'CROP' | 'TILE';
+    }>;
+  };
   get_local_components: Record<string, never>;
   get_team_components: Record<string, never>;
   create_component_instance: {
