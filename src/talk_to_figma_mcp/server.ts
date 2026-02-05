@@ -1329,7 +1329,7 @@ server.tool(
 // Create Effect Style Tool
 server.tool(
   "create_effect_style",
-  "Create shadow and blur effect styles in Figma. Supports DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, and BACKGROUND_BLUR. Multiple effects can be stacked. Perfect for elevation systems and consistent shadows.",
+  "Create shadow and blur effect styles in Figma. Supports DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, and BACKGROUND_BLUR. Multiple effects can be stacked. Each effect can bind color, radius, and spread to Figma variables for theme support. Perfect for elevation systems and consistent shadows.",
   {
     name: z.string().describe("The name of the style (e.g., 'Elevation/Level 1', 'Blur/Background')"),
     description: z.string().optional().describe("Optional description of the style"),
@@ -1350,7 +1350,12 @@ server.tool(
         radius: z.number().min(0).describe("Blur radius in pixels"),
         spread: z.number().optional().describe("Shadow spread in pixels (for DROP_SHADOW and INNER_SHADOW)"),
         visible: z.boolean().optional().describe("Whether the effect is visible (defaults to true)"),
-        blendMode: z.string().optional().describe("Blend mode (e.g., 'NORMAL', 'MULTIPLY')")
+        blendMode: z.string().optional().describe("Blend mode (e.g., 'NORMAL', 'MULTIPLY')"),
+        boundVariables: z.record(
+          z.object({
+            variableId: z.string().describe("The variable ID to bind")
+          })
+        ).optional().describe("Bind variables to effect properties. Keys: 'color' (COLOR var), 'radius' (FLOAT var), 'spread' (FLOAT var).")
       })
     ).min(1).describe("Array of effects to apply. Multiple effects are stacked."),
     boundVariables: z.record(
@@ -1515,7 +1520,7 @@ server.tool(
 // Update Effect Style Tool
 server.tool(
   "update_effect_style",
-  "Modify an existing effect style. Can update name, description, and/or effects array. Supports DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR.",
+  "Modify an existing effect style. Can update name, description, and/or effects array. Supports DROP_SHADOW, INNER_SHADOW, LAYER_BLUR, BACKGROUND_BLUR. Each effect can bind color, radius, and spread to Figma variables.",
   {
     styleId: z.string().describe("The ID of the effect style to update (from get_styles)"),
     name: z.string().optional().describe("New name for the style"),
@@ -1536,7 +1541,12 @@ server.tool(
         radius: z.number().min(0),
         spread: z.number().optional(),
         visible: z.boolean().optional(),
-        blendMode: z.string().optional()
+        blendMode: z.string().optional(),
+        boundVariables: z.record(
+          z.object({
+            variableId: z.string().describe("The variable ID to bind")
+          })
+        ).optional().describe("Bind variables to effect properties. Keys: 'color' (COLOR var), 'radius' (FLOAT var), 'spread' (FLOAT var).")
       })
     ).optional().describe("New effects array (replaces existing effects)"),
     boundVariables: z.record(
@@ -1587,6 +1597,232 @@ server.tool(
       return { content: [{ type: "text", text: typedResult.message }] };
     } catch (error) {
       return { content: [{ type: "text", text: `Error detaching style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Create Component Tool
+server.tool(
+  "create_component",
+  "Create a reusable component from an existing node. Converts the node into a component that can be instanced.",
+  {
+    nodeId: z.string().describe("The ID of the node to convert into a component"),
+    name: z.string().optional().describe("Optional name for the component"),
+    description: z.string().optional().describe("Optional description for the component")
+  },
+  async ({ nodeId, name, description }) => {
+    try {
+      const result = await sendCommandToFigma("create_component", { nodeId, name, description });
+      const typedResult = result as { id: string; name: string; key: string; message: string };
+      return { content: [{ type: "text", text: `${typedResult.message} (ID: ${typedResult.id}, key: ${typedResult.key})` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error creating component: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Swap Component Instance Tool
+server.tool(
+  "swap_component_instance",
+  "Change which component an instance points to. Swaps the underlying component while preserving overrides where possible.",
+  {
+    instanceId: z.string().describe("The ID of the component instance to modify"),
+    newComponentKey: z.string().describe("The key of the new component to swap to (from get_local_components or get_team_components)")
+  },
+  async ({ instanceId, newComponentKey }) => {
+    try {
+      const result = await sendCommandToFigma("swap_component_instance", { instanceId, newComponentKey });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error swapping component: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Get Component Styles Tool
+server.tool(
+  "get_component_styles",
+  "Get all styles used in a component tree. Walks all descendants and reports fill, stroke, text, and effect style usage with counts.",
+  {
+    componentId: z.string().describe("The ID of the component or node tree to audit")
+  },
+  async ({ componentId }) => {
+    try {
+      const result = await sendCommandToFigma("get_component_styles", { componentId });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error getting component styles: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Duplicate Style Tool
+server.tool(
+  "duplicate_style",
+  "Clone an existing style with a new name. Works with paint, text, and effect styles. Perfect for creating style variations (e.g., light/dark themes).",
+  {
+    styleId: z.string().describe("The ID of the style to duplicate (from get_styles)"),
+    newName: z.string().describe("Name for the duplicated style")
+  },
+  async ({ styleId, newName }) => {
+    try {
+      const result = await sendCommandToFigma("duplicate_style", { styleId, newName });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error duplicating style: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Find Nodes With Style Tool
+server.tool(
+  "find_nodes_with_style",
+  "Find all nodes on the current page using a specific style. Returns node IDs, names, types, and which property uses the style. Use for impact analysis before style changes.",
+  {
+    styleId: z.string().describe("The ID of the style to search for")
+  },
+  async ({ styleId }) => {
+    try {
+      const result = await sendCommandToFigma("find_nodes_with_style", { styleId });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error finding nodes: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Batch Apply Styles Tool
+server.tool(
+  "batch_apply_styles",
+  "Apply multiple styles to multiple nodes in one operation. Each operation specifies a node, style, and style type. Reports success/failure for each operation.",
+  {
+    operations: z.array(
+      z.object({
+        nodeId: z.string().describe("The ID of the node"),
+        styleId: z.string().describe("The ID of the style to apply"),
+        styleType: z.enum(["fill", "stroke", "text", "effect"]).describe("Which property to apply the style to")
+      })
+    ).min(1).describe("Array of style operations to perform")
+  },
+  async ({ operations }) => {
+    try {
+      const result = await sendCommandToFigma("batch_apply_styles", { operations });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error in batch apply: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Set Auto Layout Tool
+server.tool(
+  "set_auto_layout",
+  "Comprehensive auto-layout configuration in a single call. Sets layout mode, padding, spacing, alignment, sizing, and wrap. Only provided properties are changed.",
+  {
+    nodeId: z.string().describe("The ID of the frame to configure"),
+    mode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Layout direction"),
+    padding: z.union([
+      z.number().describe("Uniform padding on all sides"),
+      z.object({
+        top: z.number().optional(),
+        right: z.number().optional(),
+        bottom: z.number().optional(),
+        left: z.number().optional()
+      }).describe("Individual padding per side")
+    ]).optional().describe("Padding - a number for uniform or object for individual sides"),
+    itemSpacing: z.number().optional().describe("Distance between children. Ignored if primaryAxisAlignItems is SPACE_BETWEEN."),
+    counterAxisSpacing: z.number().optional().describe("Distance between wrapped rows/columns (only with WRAP)"),
+    primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional().describe("Primary axis alignment"),
+    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional().describe("Counter axis alignment"),
+    layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional().describe("Horizontal sizing mode"),
+    layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional().describe("Vertical sizing mode"),
+    layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether children wrap")
+  },
+  async ({ nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap }) => {
+    try {
+      const result = await sendCommandToFigma("set_auto_layout", { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error setting auto-layout: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Set Constraints Tool
+server.tool(
+  "set_constraints",
+  "Set layout constraints for a node. Controls how a node behaves when its parent is resized.",
+  {
+    nodeId: z.string().describe("The ID of the node to modify"),
+    horizontal: z.enum(["MIN", "MAX", "CENTER", "STRETCH", "SCALE"]).optional().describe("Horizontal constraint"),
+    vertical: z.enum(["MIN", "MAX", "CENTER", "STRETCH", "SCALE"]).optional().describe("Vertical constraint")
+  },
+  async ({ nodeId, horizontal, vertical }) => {
+    try {
+      const result = await sendCommandToFigma("set_constraints", { nodeId, horizontal, vertical });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error setting constraints: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Combine As Variants Tool
+server.tool(
+  "combine_as_variants",
+  "Combine multiple components into a variant set (COMPONENT_SET). Each component becomes a variant. Components must exist first (use create_component). Returns the variant properties and their values.",
+  {
+    componentIds: z.array(z.string()).min(2).describe("Array of component IDs to combine (minimum 2)"),
+    parentId: z.string().optional().describe("Optional parent node ID. Defaults to the first component's parent.")
+  },
+  async ({ componentIds, parentId }) => {
+    try {
+      const result = await sendCommandToFigma("combine_as_variants", { componentIds, parentId });
+      const typedResult = result as { message: string; id: string; variantProperties: Record<string, string[]> };
+      return { content: [{ type: "text", text: `${typedResult.message}\nID: ${typedResult.id}\nProperties: ${JSON.stringify(typedResult.variantProperties, null, 2)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error combining variants: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Get Variant Properties Tool
+server.tool(
+  "get_variant_properties",
+  "Get available variant properties and their possible values from a component set, variant component, or instance. Also returns current values if called on an instance, and lists all variant combinations.",
+  {
+    nodeId: z.string().describe("The ID of a COMPONENT_SET, a variant COMPONENT, or an INSTANCE of a variant")
+  },
+  async ({ nodeId }) => {
+    try {
+      const result = await sendCommandToFigma("get_variant_properties", { nodeId });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error getting variant properties: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Set Variant Properties Tool
+server.tool(
+  "set_variant_properties",
+  "Switch variant on a component instance by setting property values. For example, set { \"State\": \"Hover\", \"Size\": \"Large\" } to switch to that variant combination.",
+  {
+    instanceId: z.string().describe("The ID of the component instance to modify"),
+    properties: z.record(z.string()).describe("Object mapping property names to desired values (e.g., { \"State\": \"Hover\", \"Size\": \"Large\" })")
+  },
+  async ({ instanceId, properties }) => {
+    try {
+      const result = await sendCommandToFigma("set_variant_properties", { instanceId, properties });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error setting variant properties: ${error instanceof Error ? error.message : String(error)}` }] };
     }
   }
 );
@@ -3517,6 +3753,17 @@ type FigmaCommand =
   | "update_effect_style"
   | "delete_style"
   | "detach_style"
+  | "create_component"
+  | "swap_component_instance"
+  | "get_component_styles"
+  | "duplicate_style"
+  | "find_nodes_with_style"
+  | "batch_apply_styles"
+  | "set_auto_layout"
+  | "set_constraints"
+  | "combine_as_variants"
+  | "get_variant_properties"
+  | "set_variant_properties"
   | "get_local_components"
   | "get_team_components"
   | "create_component_instance"
@@ -3733,6 +3980,60 @@ type CommandParams = {
   detach_style: {
     nodeId: string;
     styleType: "fill" | "stroke" | "text" | "effect";
+  };
+  create_component: {
+    nodeId: string;
+    name?: string;
+    description?: string;
+  };
+  swap_component_instance: {
+    instanceId: string;
+    newComponentKey: string;
+  };
+  get_component_styles: {
+    componentId: string;
+  };
+  duplicate_style: {
+    styleId: string;
+    newName: string;
+  };
+  find_nodes_with_style: {
+    styleId: string;
+  };
+  batch_apply_styles: {
+    operations: Array<{
+      nodeId: string;
+      styleId: string;
+      styleType: "fill" | "stroke" | "text" | "effect";
+    }>;
+  };
+  set_auto_layout: {
+    nodeId: string;
+    mode?: "NONE" | "HORIZONTAL" | "VERTICAL";
+    padding?: number | { top?: number; right?: number; bottom?: number; left?: number };
+    itemSpacing?: number;
+    counterAxisSpacing?: number;
+    primaryAxisAlignItems?: "MIN" | "MAX" | "CENTER" | "SPACE_BETWEEN";
+    counterAxisAlignItems?: "MIN" | "MAX" | "CENTER" | "BASELINE";
+    layoutSizingHorizontal?: "FIXED" | "HUG" | "FILL";
+    layoutSizingVertical?: "FIXED" | "HUG" | "FILL";
+    layoutWrap?: "NO_WRAP" | "WRAP";
+  };
+  set_constraints: {
+    nodeId: string;
+    horizontal?: "MIN" | "MAX" | "CENTER" | "STRETCH" | "SCALE";
+    vertical?: "MIN" | "MAX" | "CENTER" | "STRETCH" | "SCALE";
+  };
+  combine_as_variants: {
+    componentIds: string[];
+    parentId?: string;
+  };
+  get_variant_properties: {
+    nodeId: string;
+  };
+  set_variant_properties: {
+    instanceId: string;
+    properties: Record<string, string>;
   };
   get_local_components: Record<string, never>;
   get_team_components: Record<string, never>;

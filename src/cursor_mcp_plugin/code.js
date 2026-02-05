@@ -273,6 +273,28 @@ async function handleCommand(command, params) {
       return await deleteStyle(params);
     case "detach_style":
       return await detachStyle(params);
+    case "create_component":
+      return await createComponent(params);
+    case "swap_component_instance":
+      return await swapComponentInstance(params);
+    case "get_component_styles":
+      return await getComponentStyles(params);
+    case "duplicate_style":
+      return await duplicateStyle(params);
+    case "find_nodes_with_style":
+      return await findNodesWithStyle(params);
+    case "batch_apply_styles":
+      return await batchApplyStyles(params);
+    case "set_auto_layout":
+      return await setAutoLayout(params);
+    case "set_constraints":
+      return await setConstraints(params);
+    case "combine_as_variants":
+      return await combineAsVariants(params);
+    case "get_variant_properties":
+      return await getVariantProperties(params);
+    case "set_variant_properties":
+      return await setVariantProperties(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1571,6 +1593,20 @@ async function createEffectStyle(params) {
     throw new Error("Missing or invalid effects parameter - must be a non-empty array");
   }
 
+  // Validate all variable references before creating the style
+  for (const effect of effects) {
+    if (effect.boundVariables) {
+      for (const [field, binding] of Object.entries(effect.boundVariables)) {
+        if (binding && binding.variableId) {
+          const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+          if (!variable) {
+            throw new Error("Variable not found: " + binding.variableId + " for effect field '" + field + "'");
+          }
+        }
+      }
+    }
+  }
+
   const style = figma.createEffectStyle();
   style.name = name;
 
@@ -1578,9 +1614,10 @@ async function createEffectStyle(params) {
     style.description = description;
   }
 
-  // Format and set effects
-  const formattedEffects = effects.map(effect => {
-    const formatted = {
+  // Format and set effects with per-effect variable binding
+  const formattedEffects = [];
+  for (const effect of effects) {
+    let formatted = {
       type: effect.type,
       visible: effect.visible !== undefined ? effect.visible : true
     };
@@ -1607,23 +1644,20 @@ async function createEffectStyle(params) {
       formatted.radius = parseFloat(effect.radius || 0);
     }
 
-    return formatted;
-  });
-
-  style.effects = formattedEffects;
-
-  // Bind variables if specified
-  if (boundVariables) {
-    for (const [field, binding] of Object.entries(boundVariables)) {
-      if (binding && binding.variableId) {
-        const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
-        if (!variable) {
-          throw new Error(`Variable not found: ${binding.variableId} for field '${field}'`);
+    // Bind variables to individual effect properties (color, radius, spread, etc.)
+    if (effect.boundVariables) {
+      for (const [field, binding] of Object.entries(effect.boundVariables)) {
+        if (binding && binding.variableId) {
+          const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+          formatted = figma.variables.setBoundVariableForEffect(formatted, field, variable);
         }
-        style.setBoundVariable(field, variable);
       }
     }
+
+    formattedEffects.push(formatted);
   }
+
+  style.effects = formattedEffects;
 
   return {
     id: style.id,
@@ -1888,8 +1922,23 @@ async function updateEffectStyle(params) {
   }
 
   if (effects && Array.isArray(effects) && effects.length > 0) {
-    const formattedEffects = effects.map(effect => {
-      const formatted = {
+    // Validate all variable references before modifying the style
+    for (const effect of effects) {
+      if (effect.boundVariables) {
+        for (const [field, binding] of Object.entries(effect.boundVariables)) {
+          if (binding && binding.variableId) {
+            const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+            if (!variable) {
+              throw new Error("Variable not found: " + binding.variableId + " for effect field '" + field + "'");
+            }
+          }
+        }
+      }
+    }
+
+    const formattedEffects = [];
+    for (const effect of effects) {
+      let formatted = {
         type: effect.type,
         visible: effect.visible !== undefined ? effect.visible : true
       };
@@ -1914,21 +1963,19 @@ async function updateEffectStyle(params) {
         formatted.radius = parseFloat(effect.radius || 0);
       }
 
-      return formatted;
-    });
-    style.effects = formattedEffects;
-  }
-
-  if (boundVariables) {
-    for (const [field, binding] of Object.entries(boundVariables)) {
-      if (binding && binding.variableId) {
-        const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
-        if (!variable) {
-          throw new Error(`Variable not found: ${binding.variableId} for field '${field}'`);
+      // Bind variables to individual effect properties
+      if (effect.boundVariables) {
+        for (const [field, binding] of Object.entries(effect.boundVariables)) {
+          if (binding && binding.variableId) {
+            const variable = await figma.variables.getVariableByIdAsync(binding.variableId);
+            formatted = figma.variables.setBoundVariableForEffect(formatted, field, variable);
+          }
         }
-        style.setBoundVariable(field, variable);
       }
+
+      formattedEffects.push(formatted);
     }
+    style.effects = formattedEffects;
   }
 
   return {
@@ -2035,6 +2082,620 @@ async function detachStyle(params) {
   };
 }
 
+async function createComponent(params) {
+  const { nodeId, name, description } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!("type" in node) || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error(`Cannot create component from node type: ${node.type}`);
+  }
+
+  const component = figma.createComponentFromNode(node);
+
+  if (name) {
+    component.name = name;
+  }
+  if (description) {
+    component.description = description;
+  }
+
+  return {
+    id: component.id,
+    name: component.name,
+    key: component.key,
+    description: component.description,
+    message: `Created component '${component.name}' from node`
+  };
+}
+
+async function swapComponentInstance(params) {
+  const { instanceId, newComponentKey } = params || {};
+
+  if (!instanceId) {
+    throw new Error("Missing instanceId parameter");
+  }
+  if (!newComponentKey) {
+    throw new Error("Missing newComponentKey parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(instanceId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${instanceId}`);
+  }
+  if (node.type !== "INSTANCE") {
+    throw new Error(`Node '${node.name}' is not a component instance (type: ${node.type})`);
+  }
+
+  // Try local components first (by key)
+  let newComponent = null;
+  await figma.loadAllPagesAsync();
+  const localComponents = figma.root.findAllWithCriteria({ types: ["COMPONENT"] });
+  for (const c of localComponents) {
+    if (c.key === newComponentKey) {
+      newComponent = c;
+      break;
+    }
+  }
+
+  // Fall back to importing from library
+  if (!newComponent) {
+    newComponent = await figma.importComponentByKeyAsync(newComponentKey);
+  }
+
+  if (!newComponent) {
+    throw new Error("Component not found with key: " + newComponentKey);
+  }
+
+  node.swapComponent(newComponent);
+
+  return {
+    success: true,
+    instanceId: node.id,
+    instanceName: node.name,
+    newComponentName: newComponent.name,
+    newComponentKey: newComponent.key,
+    message: `Swapped instance '${node.name}' to component '${newComponent.name}'`
+  };
+}
+
+async function getComponentStyles(params) {
+  const { componentId } = params || {};
+
+  if (!componentId) {
+    throw new Error("Missing componentId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(componentId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${componentId}`);
+  }
+
+  const styleUsage = {
+    fills: {},
+    strokes: {},
+    texts: {},
+    effects: {}
+  };
+
+  async function walkTree(n) {
+    if ("fillStyleId" in n) {
+      const id = n.fillStyleId;
+      if (id && typeof id === "string" && id !== "") {
+        styleUsage.fills[id] = (styleUsage.fills[id] || 0) + 1;
+      }
+    }
+    if ("strokeStyleId" in n) {
+      const id = n.strokeStyleId;
+      if (id && typeof id === "string" && id !== "") {
+        styleUsage.strokes[id] = (styleUsage.strokes[id] || 0) + 1;
+      }
+    }
+    if ("textStyleId" in n) {
+      const id = n.textStyleId;
+      if (id && typeof id === "string" && id !== "") {
+        styleUsage.texts[id] = (styleUsage.texts[id] || 0) + 1;
+      }
+    }
+    if ("effectStyleId" in n) {
+      const id = n.effectStyleId;
+      if (id && typeof id === "string" && id !== "") {
+        styleUsage.effects[id] = (styleUsage.effects[id] || 0) + 1;
+      }
+    }
+    if ("children" in n) {
+      for (const child of n.children) {
+        await walkTree(child);
+      }
+    }
+  }
+
+  await walkTree(node);
+
+  // Resolve style names
+  const resolveStyles = async (map) => {
+    const results = [];
+    for (const [id, count] of Object.entries(map)) {
+      const style = await figma.getStyleByIdAsync(id);
+      results.push({
+        styleId: id,
+        styleName: style ? style.name : "unknown",
+        count: count
+      });
+    }
+    return results;
+  };
+
+  return {
+    nodeId: node.id,
+    nodeName: node.name,
+    fills: await resolveStyles(styleUsage.fills),
+    strokes: await resolveStyles(styleUsage.strokes),
+    texts: await resolveStyles(styleUsage.texts),
+    effects: await resolveStyles(styleUsage.effects)
+  };
+}
+
+async function duplicateStyle(params) {
+  const { styleId, newName } = params || {};
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+  if (!newName) {
+    throw new Error("Missing newName parameter");
+  }
+
+  const sourceStyle = await figma.getStyleByIdAsync(styleId);
+  if (!sourceStyle) {
+    throw new Error(`Style not found with ID: ${styleId}`);
+  }
+
+  let newStyle;
+
+  if (sourceStyle.type === "PAINT") {
+    newStyle = figma.createPaintStyle();
+    newStyle.name = newName;
+    newStyle.description = sourceStyle.description;
+    newStyle.paints = sourceStyle.paints;
+  } else if (sourceStyle.type === "TEXT") {
+    newStyle = figma.createTextStyle();
+    newStyle.name = newName;
+    newStyle.description = sourceStyle.description;
+    await figma.loadFontAsync(sourceStyle.fontName);
+    newStyle.fontName = sourceStyle.fontName;
+    newStyle.fontSize = sourceStyle.fontSize;
+    newStyle.letterSpacing = sourceStyle.letterSpacing;
+    newStyle.lineHeight = sourceStyle.lineHeight;
+    newStyle.paragraphSpacing = sourceStyle.paragraphSpacing;
+    newStyle.textCase = sourceStyle.textCase;
+    newStyle.textDecoration = sourceStyle.textDecoration;
+    // Copy bound variables
+    if (sourceStyle.boundVariables) {
+      for (const [field, binding] of Object.entries(sourceStyle.boundVariables)) {
+        if (binding && binding.id) {
+          const variable = await figma.variables.getVariableByIdAsync(binding.id);
+          if (variable) {
+            newStyle.setBoundVariable(field, variable);
+          }
+        }
+      }
+    }
+  } else if (sourceStyle.type === "EFFECT") {
+    newStyle = figma.createEffectStyle();
+    newStyle.name = newName;
+    newStyle.description = sourceStyle.description;
+    newStyle.effects = sourceStyle.effects;
+  } else {
+    throw new Error(`Unsupported style type for duplication: ${sourceStyle.type}`);
+  }
+
+  return {
+    id: newStyle.id,
+    name: newStyle.name,
+    key: newStyle.key,
+    sourceStyleId: sourceStyle.id,
+    sourceStyleName: sourceStyle.name,
+    type: sourceStyle.type,
+    message: `Duplicated ${sourceStyle.type.toLowerCase()} style '${sourceStyle.name}' as '${newName}'`
+  };
+}
+
+async function findNodesWithStyle(params) {
+  const { styleId } = params || {};
+
+  if (!styleId) {
+    throw new Error("Missing styleId parameter");
+  }
+
+  const page = figma.currentPage;
+  const matches = [];
+
+  async function walkTree(node) {
+    if ("fillStyleId" in node && node.fillStyleId === styleId) {
+      matches.push({ nodeId: node.id, nodeName: node.name, nodeType: node.type, property: "fill" });
+    }
+    if ("strokeStyleId" in node && node.strokeStyleId === styleId) {
+      matches.push({ nodeId: node.id, nodeName: node.name, nodeType: node.type, property: "stroke" });
+    }
+    if ("textStyleId" in node && node.textStyleId === styleId) {
+      matches.push({ nodeId: node.id, nodeName: node.name, nodeType: node.type, property: "text" });
+    }
+    if ("effectStyleId" in node && node.effectStyleId === styleId) {
+      matches.push({ nodeId: node.id, nodeName: node.name, nodeType: node.type, property: "effect" });
+    }
+    if ("children" in node) {
+      for (const child of node.children) {
+        await walkTree(child);
+      }
+    }
+  }
+
+  await walkTree(page);
+
+  return {
+    styleId: styleId,
+    count: matches.length,
+    nodes: matches
+  };
+}
+
+async function batchApplyStyles(params) {
+  const { operations } = params || {};
+
+  if (!operations || !Array.isArray(operations) || operations.length === 0) {
+    throw new Error("Missing or invalid operations parameter - must be a non-empty array");
+  }
+
+  const results = [];
+
+  for (const op of operations) {
+    try {
+      const node = await figma.getNodeByIdAsync(op.nodeId);
+      if (!node) {
+        results.push({ nodeId: op.nodeId, success: false, error: `Node not found` });
+        continue;
+      }
+
+      const style = await figma.getStyleByIdAsync(op.styleId);
+      if (!style) {
+        results.push({ nodeId: op.nodeId, success: false, error: `Style not found: ${op.styleId}` });
+        continue;
+      }
+
+      if (op.styleType === "fill") {
+        await node.setFillStyleIdAsync(op.styleId);
+      } else if (op.styleType === "stroke") {
+        await node.setStrokeStyleIdAsync(op.styleId);
+      } else if (op.styleType === "text") {
+        await node.setTextStyleIdAsync(op.styleId);
+      } else if (op.styleType === "effect") {
+        await node.setEffectStyleIdAsync(op.styleId);
+      } else {
+        results.push({ nodeId: op.nodeId, success: false, error: `Invalid styleType: ${op.styleType}` });
+        continue;
+      }
+
+      results.push({ nodeId: op.nodeId, nodeName: node.name, styleType: op.styleType, styleName: style.name, success: true });
+    } catch (e) {
+      results.push({ nodeId: op.nodeId, success: false, error: e.message || String(e) });
+    }
+  }
+
+  const successCount = results.filter(r => r.success).length;
+  return {
+    total: operations.length,
+    succeeded: successCount,
+    failed: operations.length - successCount,
+    results: results,
+    message: `Applied ${successCount}/${operations.length} style operations`
+  };
+}
+
+async function setAutoLayout(params) {
+  const { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (node.type !== "FRAME" && node.type !== "COMPONENT" && node.type !== "COMPONENT_SET") {
+    throw new Error(`Node type '${node.type}' does not support auto-layout. Must be FRAME, COMPONENT, or COMPONENT_SET.`);
+  }
+
+  // Set layout mode
+  if (mode !== undefined) {
+    node.layoutMode = mode;
+  }
+
+  // Set wrap
+  if (layoutWrap !== undefined) {
+    node.layoutWrap = layoutWrap;
+  }
+
+  // Set padding (supports uniform or individual)
+  if (padding !== undefined) {
+    if (typeof padding === 'number') {
+      node.paddingTop = padding;
+      node.paddingRight = padding;
+      node.paddingBottom = padding;
+      node.paddingLeft = padding;
+    } else {
+      if (padding.top !== undefined) node.paddingTop = padding.top;
+      if (padding.right !== undefined) node.paddingRight = padding.right;
+      if (padding.bottom !== undefined) node.paddingBottom = padding.bottom;
+      if (padding.left !== undefined) node.paddingLeft = padding.left;
+    }
+  }
+
+  // Set spacing
+  if (itemSpacing !== undefined) {
+    node.itemSpacing = itemSpacing;
+  }
+  if (counterAxisSpacing !== undefined) {
+    node.counterAxisSpacing = counterAxisSpacing;
+  }
+
+  // Set alignment
+  if (primaryAxisAlignItems !== undefined) {
+    node.primaryAxisAlignItems = primaryAxisAlignItems;
+  }
+  if (counterAxisAlignItems !== undefined) {
+    node.counterAxisAlignItems = counterAxisAlignItems;
+  }
+
+  // Set sizing
+  if (layoutSizingHorizontal !== undefined) {
+    node.layoutSizingHorizontal = layoutSizingHorizontal;
+  }
+  if (layoutSizingVertical !== undefined) {
+    node.layoutSizingVertical = layoutSizingVertical;
+  }
+
+  return {
+    nodeId: node.id,
+    nodeName: node.name,
+    layoutMode: node.layoutMode,
+    layoutWrap: node.layoutWrap,
+    padding: {
+      top: node.paddingTop,
+      right: node.paddingRight,
+      bottom: node.paddingBottom,
+      left: node.paddingLeft
+    },
+    itemSpacing: node.itemSpacing,
+    counterAxisSpacing: node.counterAxisSpacing,
+    primaryAxisAlignItems: node.primaryAxisAlignItems,
+    counterAxisAlignItems: node.counterAxisAlignItems,
+    layoutSizingHorizontal: node.layoutSizingHorizontal,
+    layoutSizingVertical: node.layoutSizingVertical,
+    message: `Configured auto-layout on '${node.name}'`
+  };
+}
+
+async function setConstraints(params) {
+  const { nodeId, horizontal, vertical } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!("constraints" in node)) {
+    throw new Error(`Node type '${node.type}' does not support constraints`);
+  }
+
+  node.constraints = {
+    horizontal: horizontal !== undefined ? horizontal : node.constraints.horizontal,
+    vertical: vertical !== undefined ? vertical : node.constraints.vertical
+  };
+
+  return {
+    nodeId: node.id,
+    nodeName: node.name,
+    constraints: node.constraints,
+    message: `Set constraints on '${node.name}': horizontal=${node.constraints.horizontal}, vertical=${node.constraints.vertical}`
+  };
+}
+
+async function combineAsVariants(params) {
+  var _params = params || {};
+  var componentIds = _params.componentIds;
+  var parentId = _params.parentId;
+
+  if (!componentIds || !Array.isArray(componentIds) || componentIds.length < 2) {
+    throw new Error("componentIds must be an array with at least 2 component IDs");
+  }
+
+  // Resolve all component nodes
+  var components = [];
+  for (var i = 0; i < componentIds.length; i++) {
+    var node = await figma.getNodeByIdAsync(componentIds[i]);
+    if (!node) {
+      throw new Error("Component not found with ID: " + componentIds[i]);
+    }
+    if (node.type !== "COMPONENT") {
+      throw new Error("Node '" + node.name + "' is not a COMPONENT (type: " + node.type + "). Convert it first with create_component.");
+    }
+    components.push(node);
+  }
+
+  // Resolve parent if provided
+  var parent = null;
+  if (parentId) {
+    parent = await figma.getNodeByIdAsync(parentId);
+    if (!parent) {
+      throw new Error("Parent node not found with ID: " + parentId);
+    }
+  } else {
+    parent = components[0].parent;
+  }
+
+  var componentSet = figma.combineAsVariants(components, parent);
+
+  // Collect variant property info
+  var variantGroupProperties = {};
+  if (componentSet.variantGroupProperties) {
+    var keys = Object.keys(componentSet.variantGroupProperties);
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k];
+      variantGroupProperties[key] = componentSet.variantGroupProperties[key].values;
+    }
+  }
+
+  return {
+    id: componentSet.id,
+    name: componentSet.name,
+    key: componentSet.key,
+    variantCount: componentSet.children.length,
+    variantProperties: variantGroupProperties,
+    message: "Combined " + components.length + " components into variant set '" + componentSet.name + "'"
+  };
+}
+
+async function getVariantProperties(params) {
+  var _params = params || {};
+  var nodeId = _params.nodeId;
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error("Node not found with ID: " + nodeId);
+  }
+
+  // If it's an instance, find the main component's parent (the component set)
+  var componentSet = null;
+  if (node.type === "COMPONENT_SET") {
+    componentSet = node;
+  } else if (node.type === "COMPONENT" && node.parent && node.parent.type === "COMPONENT_SET") {
+    componentSet = node.parent;
+  } else if (node.type === "INSTANCE") {
+    var mainComponent = await node.getMainComponentAsync();
+    if (mainComponent && mainComponent.parent && mainComponent.parent.type === "COMPONENT_SET") {
+      componentSet = mainComponent.parent;
+    }
+  }
+
+  if (!componentSet) {
+    throw new Error("Node '" + node.name + "' is not a variant component set, a variant, or an instance of a variant");
+  }
+
+  // Get variant properties and their possible values
+  var variantGroupProperties = {};
+  if (componentSet.variantGroupProperties) {
+    var keys = Object.keys(componentSet.variantGroupProperties);
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k];
+      variantGroupProperties[key] = componentSet.variantGroupProperties[key].values;
+    }
+  }
+
+  // Get current values if it's an instance
+  var currentValues = null;
+  if (node.type === "INSTANCE") {
+    var props = node.componentProperties;
+    if (props) {
+      currentValues = {};
+      var propKeys = Object.keys(props);
+      for (var p = 0; p < propKeys.length; p++) {
+        var pk = propKeys[p];
+        if (props[pk].type === "VARIANT") {
+          currentValues[pk] = props[pk].value;
+        }
+      }
+    }
+  }
+
+  // List all variants with their property combos
+  var variants = [];
+  for (var c = 0; c < componentSet.children.length; c++) {
+    var child = componentSet.children[c];
+    variants.push({
+      id: child.id,
+      name: child.name,
+      key: child.key
+    });
+  }
+
+  return {
+    componentSetId: componentSet.id,
+    componentSetName: componentSet.name,
+    properties: variantGroupProperties,
+    currentValues: currentValues,
+    variants: variants
+  };
+}
+
+async function setVariantProperties(params) {
+  var _params = params || {};
+  var instanceId = _params.instanceId;
+  var properties = _params.properties;
+
+  if (!instanceId) {
+    throw new Error("Missing instanceId parameter");
+  }
+  if (!properties || typeof properties !== "object") {
+    throw new Error("Missing or invalid properties parameter - must be an object of { propertyName: value }");
+  }
+
+  var node = await figma.getNodeByIdAsync(instanceId);
+  if (!node) {
+    throw new Error("Node not found with ID: " + instanceId);
+  }
+  if (node.type !== "INSTANCE") {
+    throw new Error("Node '" + node.name + "' is not a component instance (type: " + node.type + ")");
+  }
+
+  // Build the properties object in Figma's format
+  var propsToSet = {};
+  var propKeys = Object.keys(properties);
+  for (var i = 0; i < propKeys.length; i++) {
+    var key = propKeys[i];
+    propsToSet[key] = properties[key];
+  }
+
+  node.setProperties(propsToSet);
+
+  // Read back the current component properties
+  var currentProps = node.componentProperties;
+  var currentVariantValues = {};
+  if (currentProps) {
+    var ck = Object.keys(currentProps);
+    for (var j = 0; j < ck.length; j++) {
+      if (currentProps[ck[j]].type === "VARIANT") {
+        currentVariantValues[ck[j]] = currentProps[ck[j]].value;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    instanceId: node.id,
+    instanceName: node.name,
+    currentVariantValues: currentVariantValues,
+    message: "Set variant properties on '" + node.name + "'"
+  };
+}
+
 // async function getTeamComponents() {
 //   try {
 //     const teamComponents =
@@ -2062,7 +2723,26 @@ async function createComponentInstance(params) {
   }
 
   try {
-    const component = await figma.importComponentByKeyAsync(componentKey);
+    // Try local components first (by key)
+    let component = null;
+    await figma.loadAllPagesAsync();
+    const localComponents = figma.root.findAllWithCriteria({ types: ["COMPONENT"] });
+    for (const c of localComponents) {
+      if (c.key === componentKey) {
+        component = c;
+        break;
+      }
+    }
+
+    // Fall back to importing from library
+    if (!component) {
+      component = await figma.importComponentByKeyAsync(componentKey);
+    }
+
+    if (!component) {
+      throw new Error("Component not found with key: " + componentKey);
+    }
+
     const instance = component.createInstance();
 
     instance.x = x;
@@ -2080,7 +2760,7 @@ async function createComponentInstance(params) {
       componentId: instance.componentId,
     };
   } catch (error) {
-    throw new Error(`Error creating component instance: ${error.message}`);
+    throw new Error("Error creating component instance: " + error.message);
   }
 }
 

@@ -122,58 +122,59 @@ Last Updated: 2026-02-05
 
 ### Component & Instance Management
 
-- [ ] **`create_component`**
+- [x] **`create_component`** ✅ **COMPLETED**
   - Create reusable components from nodes
   - Parameters: `nodeId`, `name`, `description`
   - Use case: Build component libraries
   - Estimated complexity: Medium
 
-- [ ] **`swap_component_instance`**
+- [x] **`swap_component_instance`** ✅ **COMPLETED**
   - Change which component an instance points to
   - Parameters: `instanceId`, `newComponentKey`
   - Use case: Swap button variants, update instances
   - Estimated complexity: Low
 
-- [ ] **`get_component_styles`**
+- [x] **`get_component_styles`** ✅ **COMPLETED**
   - Get all styles used in a component tree
   - Parameters: `componentId`
-  - Returns: Array of style IDs and usage count
+  - Returns: Array of style IDs and usage count per category (fill/stroke/text/effect)
   - Use case: Audit component styling, extract tokens
   - Estimated complexity: Medium
 
 ### Style Utilities
 
-- [ ] **`duplicate_style`**
+- [x] **`duplicate_style`** ✅ **COMPLETED**
   - Clone existing styles for variations
   - Parameters: `styleId`, `newName`
+  - Supports paint, text, and effect styles
   - Use case: Create style variations (light/dark)
   - Estimated complexity: Low
 
-- [ ] **`find_nodes_with_style`**
+- [x] **`find_nodes_with_style`** ✅ **COMPLETED**
   - Find all nodes using a specific style
   - Parameters: `styleId`
-  - Returns: Array of node IDs
+  - Returns: Array of node IDs, names, types, and which property uses the style
   - Use case: Impact analysis before style changes
   - Estimated complexity: Medium
 
-- [ ] **`batch_apply_styles`**
+- [x] **`batch_apply_styles`** ✅ **COMPLETED**
   - Apply multiple styles to multiple nodes at once
   - Parameters: `operations` array of `{ nodeId, styleId, styleType }`
+  - Reports per-operation success/failure
   - Use case: Bulk styling operations
   - Estimated complexity: Medium
 
 ### Auto Layout Enhancements
 
-- [ ] **`set_auto_layout`**
-  - Comprehensive auto-layout configuration
-  - Parameters: `nodeId`, `mode`, `padding`, `spacing`, alignment options
+- [x] **`set_auto_layout`** ✅ **COMPLETED**
+  - Comprehensive auto-layout configuration in a single call
+  - Parameters: `nodeId`, `mode`, `padding` (uniform or per-side), `itemSpacing`, `counterAxisSpacing`, alignment, sizing, `layoutWrap`
   - Use case: Create responsive components
   - Estimated complexity: High
-  - Note: Some basic auto-layout tools already exist (set_padding, set_layout_mode, etc.)
 
-- [ ] **`set_constraints`**
+- [x] **`set_constraints`** ✅ **COMPLETED**
   - Set layout constraints for nodes
-  - Parameters: `nodeId`, `horizontal`, `vertical`
+  - Parameters: `nodeId`, `horizontal`, `vertical` (MIN/MAX/CENTER/STRETCH/SCALE)
   - Use case: Responsive design
   - Estimated complexity: Low
 
@@ -206,11 +207,11 @@ Last Updated: 2026-02-05
 ## 📊 Progress Summary
 
 **Total Tasks:** 30
-**Completed:** 19 (63%)
+**Completed:** 27 (90%)
 **Phase 1 (Critical):** 3/3 (100%) ✅
 **Phase 2 (High):** 3/3 (100%) ✅
 **Phase 3 (Medium):** 5/5 (100%) ✅
-**Phase 4 (Nice to Have):** 0/9 (0%)
+**Phase 4 (Nice to Have):** 8/8 (100%) ✅
 **Phase 5 (Future):** 0/3 (0%)
 
 ---
