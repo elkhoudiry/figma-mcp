@@ -241,6 +241,8 @@ async function handleCommand(command, params) {
       return await createVariable(params);
     case "set_variable_value":
       return await setVariableValue(params);
+    case "create_collection":
+      return await createCollection(params);
     case "list_collections":
       return await listCollections();
     case "set_node_paints":
@@ -1388,7 +1390,7 @@ async function createTextStyle(params) {
     style.textDecoration = textDecoration;
   }
 
-  // Bind variables if specified (e.g., fontSize, letterSpacing, lineHeight)
+  // Bind variables if specified (e.g., fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing)
   if (boundVariables) {
     for (const [field, binding] of Object.entries(boundVariables)) {
       if (binding && binding.variableId) {
@@ -1692,7 +1694,25 @@ async function getNodeVariables(params) {
   return { nodeId, boundVariables: node.boundVariables };
 }
 
-async function listCollections(params) { 
+async function createCollection(params) {
+  if (!figma.variables || !figma.variables.createVariableCollection) {
+    throw new Error("Figma Variables API not available");
+  }
+  const { name } = params || {};
+  if (!name) {
+    throw new Error("Missing required parameter: name");
+  }
+  const collection = figma.variables.createVariableCollection(name);
+  return {
+    id: collection.id,
+    name: collection.name,
+    key: collection.key,
+    modes: collection.modes,
+    defaultModeId: collection.defaultModeId
+  };
+}
+
+async function listCollections(params) {
   if (!figma.variables || !figma.variables.getLocalVariableCollectionsAsync) {
     throw new Error("Figma Variables API not available");
   }

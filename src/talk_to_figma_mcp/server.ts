@@ -1220,7 +1220,7 @@ server.tool(
       z.object({
         variableId: z.string().describe("The variable ID to bind")
       })
-    ).optional().describe("Bind variables to text style properties. Keys are property names (e.g., 'fontSize', 'letterSpacing', 'lineHeight', 'paragraphSpacing'). Values contain the variableId to bind.")
+    ).optional().describe("Bind variables to text style properties. Keys are property names (e.g., 'fontFamily', 'fontStyle', 'fontSize', 'letterSpacing', 'lineHeight', 'paragraphSpacing'). Values contain the variableId to bind.")
   },
   async ({ name, description, fontFamily, fontStyle, fontSize, letterSpacing, lineHeight, paragraphSpacing, textCase, textDecoration, boundVariables }) => {
     try {
@@ -3041,23 +3041,28 @@ server.tool(
   {
     variableId: z.string().describe("The ID of the variable to update"),
     modeId: z.string().optional().describe("Optional mode ID for the variable, if applicable"),
-    value: z.object({
-      r: z.number().optional(),
-      g: z.number().optional(),
-      b: z.number().optional(),
-      a: z.number().optional()
-    }).optional().describe("The value for the variable"),
+    value: z.union([
+      z.number(),
+      z.string(),
+      z.boolean(),
+      z.object({
+        r: z.number().optional(),
+        g: z.number().optional(),
+        b: z.number().optional(),
+        a: z.number().optional()
+      })
+    ]).optional().describe("The value for the variable. Use a number for FLOAT, string for STRING, boolean for BOOLEAN, or {r,g,b,a} object for COLOR."),
     valueType: z.enum(["FLOAT", "STRING", "BOOLEAN", "COLOR"]).describe("The type of the value to set"),
     variableReferenceId: z.string().optional().describe("Optional reference to another variable")
   },
   async ({ variableId, modeId, value, valueType, variableReferenceId }) => {
     try {
-      const formattedValue = valueType === "COLOR" && value
+      const formattedValue = valueType === "COLOR" && value && typeof value === "object"
         ? {
-            r: value.r || 0,
-            g: value.g || 0,
-            b: value.b || 0,
-            a: value.a || 1
+            r: (value as any).r || 0,
+            g: (value as any).g || 0,
+            b: (value as any).b || 0,
+            a: (value as any).a || 1
           }
         : value;
 
@@ -3083,6 +3088,36 @@ server.tool(
           {
             type: "text",
             text: `Error setting variable value: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+server.tool(
+  "create_collection",
+  "Create a new variable collection in the Figma document.",
+  {
+    name: z.string().describe("The name of the collection to create"),
+  },
+  async ({ name }) => {
+    try {
+      const result = await sendCommandToFigma("create_collection", { name });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating collection: ${error instanceof Error ? error.message : String(error)}`
           }
         ]
       };
@@ -3168,6 +3203,7 @@ type FigmaCommand =
   | "set_focus"
   | "set_selections"
   | "list_variables"
+  | "create_collection"
   | "list_collections"
   | "get_node_variables"
   | "get_node_paints"
@@ -3363,6 +3399,7 @@ type CommandParams = {
     nodeIds: string[];
   };
   list_variables: Record<string, never>;
+  create_collection: { name: string };
   list_collections: Record<string, never>;
   get_node_variables: { nodeId: string };
   get_node_paints: { nodeId: string };
