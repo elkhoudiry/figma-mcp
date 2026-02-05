@@ -287,6 +287,8 @@ async function handleCommand(command, params) {
       return await batchApplyStyles(params);
     case "set_auto_layout":
       return await setAutoLayout(params);
+    case "set_grid_child":
+      return await setGridChild(params);
     case "set_constraints":
       return await setConstraints(params);
     case "combine_as_variants":
@@ -774,6 +776,12 @@ async function createFrame(params) {
     layoutSizingHorizontal = "FIXED",
     layoutSizingVertical = "FIXED",
     itemSpacing = 0,
+    gridRowCount,
+    gridColumnCount,
+    gridRowGap,
+    gridColumnGap,
+    gridRowSizes,
+    gridColumnSizes,
   } = params || {};
 
   const frame = figma.createFrame();
@@ -803,6 +811,16 @@ async function createFrame(params) {
 
     // Set item spacing only when layoutMode is not NONE
     frame.itemSpacing = itemSpacing;
+  }
+
+  // Set grid-specific properties when layoutMode is GRID
+  if (layoutMode === "GRID") {
+    if (gridRowCount !== undefined) frame.gridRowCount = gridRowCount;
+    if (gridColumnCount !== undefined) frame.gridColumnCount = gridColumnCount;
+    if (gridRowGap !== undefined) frame.gridRowGap = gridRowGap;
+    if (gridColumnGap !== undefined) frame.gridColumnGap = gridColumnGap;
+    if (gridRowSizes !== undefined) frame.gridRowSizes = gridRowSizes;
+    if (gridColumnSizes !== undefined) frame.gridColumnSizes = gridColumnSizes;
   }
 
   // Set fill color if provided
@@ -2400,7 +2418,7 @@ async function batchApplyStyles(params) {
 }
 
 async function setAutoLayout(params) {
-  const { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap } = params || {};
+  const { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -2464,7 +2482,17 @@ async function setAutoLayout(params) {
     node.layoutSizingVertical = layoutSizingVertical;
   }
 
-  return {
+  // Set grid-specific properties
+  if (mode === "GRID" || node.layoutMode === "GRID") {
+    if (gridRowCount !== undefined) node.gridRowCount = gridRowCount;
+    if (gridColumnCount !== undefined) node.gridColumnCount = gridColumnCount;
+    if (gridRowGap !== undefined) node.gridRowGap = gridRowGap;
+    if (gridColumnGap !== undefined) node.gridColumnGap = gridColumnGap;
+    if (gridRowSizes !== undefined) node.gridRowSizes = gridRowSizes;
+    if (gridColumnSizes !== undefined) node.gridColumnSizes = gridColumnSizes;
+  }
+
+  var result = {
     nodeId: node.id,
     nodeName: node.name,
     layoutMode: node.layoutMode,
@@ -2481,8 +2509,19 @@ async function setAutoLayout(params) {
     counterAxisAlignItems: node.counterAxisAlignItems,
     layoutSizingHorizontal: node.layoutSizingHorizontal,
     layoutSizingVertical: node.layoutSizingVertical,
-    message: `Configured auto-layout on '${node.name}'`
+    message: "Configured auto-layout on '" + node.name + "'"
   };
+
+  if (node.layoutMode === "GRID") {
+    result.gridRowCount = node.gridRowCount;
+    result.gridColumnCount = node.gridColumnCount;
+    result.gridRowGap = node.gridRowGap;
+    result.gridColumnGap = node.gridColumnGap;
+    result.gridRowSizes = node.gridRowSizes;
+    result.gridColumnSizes = node.gridColumnSizes;
+  }
+
+  return result;
 }
 
 async function setConstraints(params) {
@@ -2693,6 +2732,68 @@ async function setVariantProperties(params) {
     instanceName: node.name,
     currentVariantValues: currentVariantValues,
     message: "Set variant properties on '" + node.name + "'"
+  };
+}
+
+async function setGridChild(params) {
+  var _params = params || {};
+  var nodeId = _params.nodeId;
+  var gridRowSpan = _params.gridRowSpan;
+  var gridColumnSpan = _params.gridColumnSpan;
+  var rowIndex = _params.rowIndex;
+  var columnIndex = _params.columnIndex;
+  var gridChildHorizontalAlign = _params.gridChildHorizontalAlign;
+  var gridChildVerticalAlign = _params.gridChildVerticalAlign;
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error("Node not found with ID: " + nodeId);
+  }
+
+  // Verify parent is a GRID layout
+  var parent = node.parent;
+  if (!parent || parent.type === "PAGE" || parent.type === "DOCUMENT") {
+    throw new Error("Node must be a child of a frame with GRID layout");
+  }
+  if (parent.layoutMode !== "GRID") {
+    throw new Error("Parent node '" + parent.name + "' has layoutMode '" + parent.layoutMode + "', expected 'GRID'");
+  }
+
+  // Set span values
+  if (gridRowSpan !== undefined) {
+    node.gridRowSpan = gridRowSpan;
+  }
+  if (gridColumnSpan !== undefined) {
+    node.gridColumnSpan = gridColumnSpan;
+  }
+
+  // Set position using setGridChildPosition
+  if (rowIndex !== undefined && columnIndex !== undefined) {
+    node.setGridChildPosition(rowIndex, columnIndex);
+  }
+
+  // Set alignment
+  if (gridChildHorizontalAlign !== undefined) {
+    node.gridChildHorizontalAlign = gridChildHorizontalAlign;
+  }
+  if (gridChildVerticalAlign !== undefined) {
+    node.gridChildVerticalAlign = gridChildVerticalAlign;
+  }
+
+  return {
+    nodeId: node.id,
+    nodeName: node.name,
+    gridRowSpan: node.gridRowSpan,
+    gridColumnSpan: node.gridColumnSpan,
+    gridRowAnchorIndex: node.gridRowAnchorIndex,
+    gridColumnAnchorIndex: node.gridColumnAnchorIndex,
+    gridChildHorizontalAlign: node.gridChildHorizontalAlign,
+    gridChildVerticalAlign: node.gridChildVerticalAlign,
+    message: "Configured grid child '" + node.name + "' in grid '" + parent.name + "'"
   };
 }
 

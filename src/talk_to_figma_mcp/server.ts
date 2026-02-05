@@ -398,7 +398,7 @@ server.tool(
 // Create Frame Tool
 server.tool(
   "create_frame",
-  "Create a new frame in Figma",
+  "Create a new frame in Figma. Supports HORIZONTAL, VERTICAL, and GRID layout modes. For GRID: set gridRowCount/gridColumnCount to define the grid, gridRowGap/gridColumnGap for spacing, and gridRowSizes/gridColumnSizes for track sizing (FIXED, FLEX, HUG). After creating a GRID frame, use set_grid_child to position and align children within cells.",
   {
     x: z.number().describe("X position"),
     y: z.number().describe("Y position"),
@@ -438,7 +438,7 @@ server.tool(
       .optional()
       .describe("Stroke color in RGBA format"),
     strokeWeight: z.number().positive().optional().describe("Stroke weight"),
-    layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Auto-layout mode for the frame"),
+    layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL", "GRID"]).optional().describe("Auto-layout mode for the frame. GRID enables CSS Grid-style layout — set gridRowCount/gridColumnCount when using GRID."),
     layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether the auto-layout frame wraps its children"),
     paddingTop: z.number().optional().describe("Top padding for auto-layout frame"),
     paddingRight: z.number().optional().describe("Right padding for auto-layout frame"),
@@ -447,14 +447,20 @@ server.tool(
     primaryAxisAlignItems: z
       .enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"])
       .optional()
-      .describe("Primary axis alignment for auto-layout frame. Note: When set to SPACE_BETWEEN, itemSpacing will be ignored as children will be evenly spaced."),
-    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional().describe("Counter axis alignment for auto-layout frame"),
+      .describe("Primary axis alignment for auto-layout frame. Note: When set to SPACE_BETWEEN, itemSpacing will be ignored as children will be evenly spaced. In HORIZONTAL layout: left/right. In VERTICAL layout: top/bottom."),
+    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional().describe("Counter axis alignment for auto-layout frame. In HORIZONTAL layout: top/bottom. In VERTICAL layout: left/right."),
     layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional().describe("Horizontal sizing mode for auto-layout frame"),
     layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional().describe("Vertical sizing mode for auto-layout frame"),
     itemSpacing: z
       .number()
       .optional()
-      .describe("Distance between children in auto-layout frame. Note: This value will be ignored if primaryAxisAlignItems is set to SPACE_BETWEEN.")
+      .describe("Distance between children in auto-layout frame. Note: This value will be ignored if primaryAxisAlignItems is set to SPACE_BETWEEN."),
+    gridRowCount: z.number().int().min(1).optional().describe("Number of rows for GRID layout"),
+    gridColumnCount: z.number().int().min(1).optional().describe("Number of columns for GRID layout"),
+    gridRowGap: z.number().min(0).optional().describe("Gap between rows for GRID layout"),
+    gridColumnGap: z.number().min(0).optional().describe("Gap between columns for GRID layout"),
+    gridRowSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Row size definitions for GRID layout"),
+    gridColumnSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Column size definitions for GRID layout")
   },
   async ({
     x,
@@ -476,7 +482,13 @@ server.tool(
     counterAxisAlignItems,
     layoutSizingHorizontal,
     layoutSizingVertical,
-    itemSpacing
+    itemSpacing,
+    gridRowCount,
+    gridColumnCount,
+    gridRowGap,
+    gridColumnGap,
+    gridRowSizes,
+    gridColumnSizes
   }: any) => {
     try {
       const result = await sendCommandToFigma("create_frame", {
@@ -499,7 +511,13 @@ server.tool(
         counterAxisAlignItems,
         layoutSizingHorizontal,
         layoutSizingVertical,
-        itemSpacing
+        itemSpacing,
+        gridRowCount,
+        gridColumnCount,
+        gridRowGap,
+        gridColumnGap,
+        gridRowSizes,
+        gridColumnSizes
       });
       const typedResult = result as { name: string; id: string };
       return {
@@ -1720,10 +1738,10 @@ server.tool(
 // Set Auto Layout Tool
 server.tool(
   "set_auto_layout",
-  "Comprehensive auto-layout configuration in a single call. Sets layout mode, padding, spacing, alignment, sizing, and wrap. Only provided properties are changed.",
+  "Comprehensive auto-layout configuration in a single call. Sets layout mode, padding, spacing, alignment, sizing, and wrap. Only provided properties are changed. For alignment: combine primaryAxisAlignItems + counterAxisAlignItems to position children (e.g. top-left=MIN+MIN, center=CENTER+CENTER, bottom-right=MAX+MAX). In HORIZONTAL layout: primary=left/right, counter=top/bottom. In VERTICAL layout: primary=top/bottom, counter=left/right. For GRID mode, use gridRowCount/gridColumnCount and configure per-child alignment via set_grid_child.",
   {
     nodeId: z.string().describe("The ID of the frame to configure"),
-    mode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Layout direction"),
+    mode: z.enum(["NONE", "HORIZONTAL", "VERTICAL", "GRID"]).optional().describe("Layout direction. GRID enables CSS Grid-style layout with rows/columns — set gridRowCount/gridColumnCount when using GRID."),
     padding: z.union([
       z.number().describe("Uniform padding on all sides"),
       z.object({
@@ -1735,15 +1753,21 @@ server.tool(
     ]).optional().describe("Padding - a number for uniform or object for individual sides"),
     itemSpacing: z.number().optional().describe("Distance between children. Ignored if primaryAxisAlignItems is SPACE_BETWEEN."),
     counterAxisSpacing: z.number().optional().describe("Distance between wrapped rows/columns (only with WRAP)"),
-    primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional().describe("Primary axis alignment"),
-    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional().describe("Counter axis alignment"),
+    primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional().describe("Primary axis alignment (MIN=left/top, MAX=right/bottom, CENTER=center, SPACE_BETWEEN=evenly spaced). In HORIZONTAL layout: left/right. In VERTICAL layout: top/bottom."),
+    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional().describe("Counter axis alignment (MIN=top/left, MAX=bottom/right, CENTER=center). In HORIZONTAL layout: top/bottom. In VERTICAL layout: left/right."),
     layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional().describe("Horizontal sizing mode"),
     layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional().describe("Vertical sizing mode"),
-    layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether children wrap")
+    layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether children wrap"),
+    gridRowCount: z.number().int().min(1).optional().describe("Number of rows for GRID layout"),
+    gridColumnCount: z.number().int().min(1).optional().describe("Number of columns for GRID layout"),
+    gridRowGap: z.number().min(0).optional().describe("Gap between rows for GRID layout"),
+    gridColumnGap: z.number().min(0).optional().describe("Gap between columns for GRID layout"),
+    gridRowSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Row size definitions for GRID layout"),
+    gridColumnSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Column size definitions for GRID layout")
   },
-  async ({ nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap }) => {
+  async ({ nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes }) => {
     try {
-      const result = await sendCommandToFigma("set_auto_layout", { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap });
+      const result = await sendCommandToFigma("set_auto_layout", { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes });
       const typedResult = result as { message: string };
       return { content: [{ type: "text", text: typedResult.message }] };
     } catch (error) {
@@ -1768,6 +1792,30 @@ server.tool(
       return { content: [{ type: "text", text: typedResult.message }] };
     } catch (error) {
       return { content: [{ type: "text", text: `Error setting constraints: ${error instanceof Error ? error.message : String(error)}` }] };
+    }
+  }
+);
+
+// Set Grid Child Tool
+server.tool(
+  "set_grid_child",
+  "Configure a child node within a GRID auto-layout frame. Set span, position, and alignment. Parent must have layoutMode GRID. Combine gridChildHorizontalAlign + gridChildVerticalAlign for positioning (e.g. top-left=MIN+MIN, center=CENTER+CENTER, bottom-right=MAX+MAX, stretch=AUTO+AUTO). Use gridRowSpan/gridColumnSpan to make a child span multiple rows or columns. Use rowIndex/columnIndex (0-based) to explicitly place a child in a specific cell.",
+  {
+    nodeId: z.string().describe("The ID of the child node to configure"),
+    gridRowSpan: z.number().int().min(1).optional().describe("Number of rows this child spans"),
+    gridColumnSpan: z.number().int().min(1).optional().describe("Number of columns this child spans"),
+    rowIndex: z.number().int().min(0).optional().describe("Row index to position the child at (0-based)"),
+    columnIndex: z.number().int().min(0).optional().describe("Column index to position the child at (0-based)"),
+    gridChildHorizontalAlign: z.enum(["MIN", "MAX", "CENTER", "AUTO"]).optional().describe("Horizontal alignment of the child within its grid cell (MIN=left, MAX=right, CENTER=center, AUTO=stretch/fill width)"),
+    gridChildVerticalAlign: z.enum(["MIN", "MAX", "CENTER", "AUTO"]).optional().describe("Vertical alignment of the child within its grid cell (MIN=top, MAX=bottom, CENTER=center, AUTO=stretch/fill height)")
+  },
+  async ({ nodeId, gridRowSpan, gridColumnSpan, rowIndex, columnIndex, gridChildHorizontalAlign, gridChildVerticalAlign }) => {
+    try {
+      const result = await sendCommandToFigma("set_grid_child", { nodeId, gridRowSpan, gridColumnSpan, rowIndex, columnIndex, gridChildHorizontalAlign, gridChildVerticalAlign });
+      const typedResult = result as { message: string };
+      return { content: [{ type: "text", text: typedResult.message }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: `Error setting grid child: ${error instanceof Error ? error.message : String(error)}` }] };
     }
   }
 );
@@ -2990,10 +3038,10 @@ This strategy enables transferring content and property overrides from a source 
 // Set Layout Mode Tool
 server.tool(
   "set_layout_mode",
-  "Set the layout mode and wrap behavior of a frame in Figma",
+  "Set the layout mode and wrap behavior of a frame in Figma. Use GRID for CSS Grid-style layout with rows and columns — then configure grid dimensions with set_auto_layout and position children with set_grid_child.",
   {
     nodeId: z.string().describe("The ID of the frame to modify"),
-    layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).describe("Layout mode for the frame"),
+    layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL", "GRID"]).describe("Layout mode for the frame"),
     layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether the auto-layout frame wraps its children")
   },
   async ({ nodeId, layoutMode, layoutWrap }: any) => {
@@ -3760,6 +3808,7 @@ type FigmaCommand =
   | "find_nodes_with_style"
   | "batch_apply_styles"
   | "set_auto_layout"
+  | "set_grid_child"
   | "set_constraints"
   | "combine_as_variants"
   | "get_variant_properties"
@@ -3823,6 +3872,13 @@ type CommandParams = {
     fillColor?: { r: number; g: number; b: number; a?: number };
     strokeColor?: { r: number; g: number; b: number; a?: number };
     strokeWeight?: number;
+    layoutMode?: "NONE" | "HORIZONTAL" | "VERTICAL" | "GRID";
+    gridRowCount?: number;
+    gridColumnCount?: number;
+    gridRowGap?: number;
+    gridColumnGap?: number;
+    gridRowSizes?: Array<{ type: "FIXED" | "FLEX" | "HUG"; value?: number }>;
+    gridColumnSizes?: Array<{ type: "FIXED" | "FLEX" | "HUG"; value?: number }>;
   };
   create_text: {
     x: number;
@@ -4009,7 +4065,7 @@ type CommandParams = {
   };
   set_auto_layout: {
     nodeId: string;
-    mode?: "NONE" | "HORIZONTAL" | "VERTICAL";
+    mode?: "NONE" | "HORIZONTAL" | "VERTICAL" | "GRID";
     padding?: number | { top?: number; right?: number; bottom?: number; left?: number };
     itemSpacing?: number;
     counterAxisSpacing?: number;
@@ -4018,6 +4074,21 @@ type CommandParams = {
     layoutSizingHorizontal?: "FIXED" | "HUG" | "FILL";
     layoutSizingVertical?: "FIXED" | "HUG" | "FILL";
     layoutWrap?: "NO_WRAP" | "WRAP";
+    gridRowCount?: number;
+    gridColumnCount?: number;
+    gridRowGap?: number;
+    gridColumnGap?: number;
+    gridRowSizes?: Array<{ type: "FIXED" | "FLEX" | "HUG"; value?: number }>;
+    gridColumnSizes?: Array<{ type: "FIXED" | "FLEX" | "HUG"; value?: number }>;
+  };
+  set_grid_child: {
+    nodeId: string;
+    gridRowSpan?: number;
+    gridColumnSpan?: number;
+    rowIndex?: number;
+    columnIndex?: number;
+    gridChildHorizontalAlign?: "MIN" | "MAX" | "CENTER" | "AUTO";
+    gridChildVerticalAlign?: "MIN" | "MAX" | "CENTER" | "AUTO";
   };
   set_constraints: {
     nodeId: string;
