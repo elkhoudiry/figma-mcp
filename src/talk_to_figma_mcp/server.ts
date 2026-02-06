@@ -231,6 +231,7 @@ function filterFigmaNode(node: any) {
     id: node.id,
     name: node.name,
     type: node.type,
+    visible: node.visible !== undefined ? node.visible : true,
   };
 
   if (node.fills && node.fills.length > 0) {
@@ -665,21 +666,24 @@ server.tool(
     b: z.number().min(0).max(1).describe("Blue component (0-1)"),
     a: z.number().min(0).max(1).optional().describe("Alpha/opacity component (0-1). 0=fully transparent, 1=fully opaque. Optional, defaults to 1."),
     weight: z.number().positive().optional().describe("Stroke weight in pixels"),
+    strokeWeightVariableId: z.string().optional().describe("Optional variable ID to bind the stroke weight to (FLOAT variable from list_variables)"),
   },
-  async ({ nodeId, r, g, b, a, weight }: any) => {
+  async ({ nodeId, r, g, b, a, weight, strokeWeightVariableId }: any) => {
     try {
       const result = await sendCommandToFigma("set_stroke_color", {
         nodeId,
         color: { r, g, b, a: a || 1 },
         weight: weight || 1,
+        strokeWeightVariableId,
       });
       const typedResult = result as { name: string };
+      const bound = strokeWeightVariableId ? ` (weight bound to variable ${strokeWeightVariableId})` : "";
       return {
         content: [
           {
             type: "text",
             text: `Set stroke color of node "${typedResult.name
-              }" to RGBA(${r}, ${g}, ${b}, ${a || 1}) with weight ${weight || 1}`,
+              }" to RGBA(${r}, ${g}, ${b}, ${a || 1}) with weight ${weight || 1}${bound}`,
           },
         ],
       };
@@ -1763,11 +1767,19 @@ server.tool(
     gridRowGap: z.number().min(0).optional().describe("Gap between rows for GRID layout"),
     gridColumnGap: z.number().min(0).optional().describe("Gap between columns for GRID layout"),
     gridRowSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Row size definitions for GRID layout"),
-    gridColumnSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Column size definitions for GRID layout")
+    gridColumnSizes: z.array(z.object({ type: z.enum(["FIXED", "FLEX", "HUG"]), value: z.number().optional() })).optional().describe("Column size definitions for GRID layout"),
+    boundVariables: z.object({
+      paddingTop: z.string().optional().describe("Variable ID to bind to top padding"),
+      paddingRight: z.string().optional().describe("Variable ID to bind to right padding"),
+      paddingBottom: z.string().optional().describe("Variable ID to bind to bottom padding"),
+      paddingLeft: z.string().optional().describe("Variable ID to bind to left padding"),
+      itemSpacing: z.string().optional().describe("Variable ID to bind to item spacing"),
+      counterAxisSpacing: z.string().optional().describe("Variable ID to bind to counter axis spacing"),
+    }).optional().describe("Bind spacing/padding properties to Figma variables (FLOAT type). Keys are property names, values are variable IDs from list_variables.")
   },
-  async ({ nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes }) => {
+  async ({ nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes, boundVariables }: any) => {
     try {
-      const result = await sendCommandToFigma("set_auto_layout", { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes });
+      const result = await sendCommandToFigma("set_auto_layout", { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes, boundVariables });
       const typedResult = result as { message: string };
       return { content: [{ type: "text", text: typedResult.message }] };
     } catch (error) {
@@ -2345,6 +2357,106 @@ server.tool(
             type: "text",
             text: `Error setting corner radius: ${error instanceof Error ? error.message : String(error)
               }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Rename Node Tool
+server.tool(
+  "rename_node",
+  "Rename a node in Figma. Changes the layer name visible in the layers panel.",
+  {
+    nodeId: z.string().describe("The ID of the node to rename"),
+    name: z.string().describe("The new name for the node"),
+  },
+  async ({ nodeId, name }: any) => {
+    try {
+      const result = await sendCommandToFigma("rename_node", { nodeId, name });
+      const typedResult = result as { oldName: string; newName: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Renamed node from "${typedResult.oldName}" to "${typedResult.newName}"`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error renaming node: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Visibility Tool
+server.tool(
+  "set_visibility",
+  "Set the visibility of a node in Figma. Controls whether the node is visible or hidden in the canvas.",
+  {
+    nodeId: z.string().describe("The ID of the node to modify"),
+    visible: z.boolean().describe("Whether the node should be visible (true) or hidden (false)"),
+  },
+  async ({ nodeId, visible }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_visibility", { nodeId, visible });
+      const typedResult = result as { name: string; visible: boolean };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Set visibility of node "${typedResult.name}" to ${typedResult.visible ? "visible" : "hidden"}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting visibility: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Text Alignment Tool
+server.tool(
+  "set_text_align",
+  "Set the text alignment of a text node in Figma. Controls horizontal and vertical text alignment.",
+  {
+    nodeId: z.string().describe("The ID of the text node to modify"),
+    textAlignHorizontal: z.enum(["LEFT", "CENTER", "RIGHT", "JUSTIFIED"]).optional().describe("Horizontal text alignment"),
+    textAlignVertical: z.enum(["TOP", "CENTER", "BOTTOM"]).optional().describe("Vertical text alignment"),
+  },
+  async ({ nodeId, textAlignHorizontal, textAlignVertical }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_text_align", { nodeId, textAlignHorizontal, textAlignVertical });
+      const typedResult = result as { name: string; textAlignHorizontal: string; textAlignVertical: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Set text alignment of "${typedResult.name}" to horizontal: ${typedResult.textAlignHorizontal}, vertical: ${typedResult.textAlignVertical}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting text alignment: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };
@@ -3120,15 +3232,21 @@ server.tool(
 // Set Padding Tool
 server.tool(
   "set_padding",
-  "Set padding values for an auto-layout frame in Figma",
+  "Set padding values for an auto-layout frame in Figma. Optionally bind padding properties to Figma variables.",
   {
     nodeId: z.string().describe("The ID of the frame to modify"),
     paddingTop: z.number().optional().describe("Top padding value"),
     paddingRight: z.number().optional().describe("Right padding value"),
     paddingBottom: z.number().optional().describe("Bottom padding value"),
     paddingLeft: z.number().optional().describe("Left padding value"),
+    boundVariables: z.object({
+      paddingTop: z.string().optional().describe("Variable ID to bind to top padding"),
+      paddingRight: z.string().optional().describe("Variable ID to bind to right padding"),
+      paddingBottom: z.string().optional().describe("Variable ID to bind to bottom padding"),
+      paddingLeft: z.string().optional().describe("Variable ID to bind to left padding"),
+    }).optional().describe("Bind padding properties to Figma variables (FLOAT type). Keys are property names, values are variable IDs from list_variables."),
   },
-  async ({ nodeId, paddingTop, paddingRight, paddingBottom, paddingLeft }: any) => {
+  async ({ nodeId, paddingTop, paddingRight, paddingBottom, paddingLeft, boundVariables }: any) => {
     try {
       const result = await sendCommandToFigma("set_padding", {
         nodeId,
@@ -3136,6 +3254,7 @@ server.tool(
         paddingRight,
         paddingBottom,
         paddingLeft,
+        boundVariables,
       });
       const typedResult = result as { name: string };
 
@@ -3282,18 +3401,23 @@ server.tool(
 // Set Item Spacing Tool
 server.tool(
   "set_item_spacing",
-  "Set distance between children in an auto-layout frame",
+  "Set distance between children in an auto-layout frame. Optionally bind spacing properties to Figma variables.",
   {
     nodeId: z.string().describe("The ID of the frame to modify"),
     itemSpacing: z.number().optional().describe("Distance between children. Note: This value will be ignored if primaryAxisAlignItems is set to SPACE_BETWEEN."),
-    counterAxisSpacing: z.number().optional().describe("Distance between wrapped rows/columns. Only works when layoutWrap is set to WRAP.")
+    counterAxisSpacing: z.number().optional().describe("Distance between wrapped rows/columns. Only works when layoutWrap is set to WRAP."),
+    boundVariables: z.object({
+      itemSpacing: z.string().optional().describe("Variable ID to bind to item spacing"),
+      counterAxisSpacing: z.string().optional().describe("Variable ID to bind to counter axis spacing"),
+    }).optional().describe("Bind spacing properties to Figma variables (FLOAT type). Keys are property names, values are variable IDs from list_variables.")
   },
-  async ({ nodeId, itemSpacing, counterAxisSpacing}: any) => {
+  async ({ nodeId, itemSpacing, counterAxisSpacing, boundVariables}: any) => {
     try {
       const params: any = { nodeId };
       if (itemSpacing !== undefined) params.itemSpacing = itemSpacing;
       if (counterAxisSpacing !== undefined) params.counterAxisSpacing = counterAxisSpacing;
-      
+      if (boundVariables !== undefined) params.boundVariables = boundVariables;
+
       const result = await sendCommandToFigma("set_item_spacing", params);
       const typedResult = result as { name: string, itemSpacing?: number, counterAxisSpacing?: number };
 
@@ -3891,7 +4015,10 @@ type FigmaCommand =
   | "get_node_paints"
   | "set_node_paints"
   | "create_variable"
-  | "set_variable_value";
+  | "set_variable_value"
+  | "rename_node"
+  | "set_visibility"
+  | "set_text_align";
 
 // Define the parameters for each command
 type CommandParams = {
@@ -4125,6 +4252,14 @@ type CommandParams = {
     gridColumnGap?: number;
     gridRowSizes?: Array<{ type: "FIXED" | "FLEX" | "HUG"; value?: number }>;
     gridColumnSizes?: Array<{ type: "FIXED" | "FLEX" | "HUG"; value?: number }>;
+    boundVariables?: {
+      paddingTop?: string;
+      paddingRight?: string;
+      paddingBottom?: string;
+      paddingLeft?: string;
+      itemSpacing?: string;
+      counterAxisSpacing?: string;
+    };
   };
   set_grid_child: {
     nodeId: string;
@@ -4285,6 +4420,19 @@ type CommandParams = {
     valueType: "FLOAT" | "STRING" | "BOOLEAN" | "COLOR";
     value?: any; // Value can be of any type depending on the variable type
     variableReferenceId?: string; // Optional reference to another variable
+  };
+  rename_node: {
+    nodeId: string;
+    name: string;
+  };
+  set_visibility: {
+    nodeId: string;
+    visible: boolean;
+  };
+  set_text_align: {
+    nodeId: string;
+    textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
+    textAlignVertical?: "TOP" | "CENTER" | "BOTTOM";
   };
 };
 

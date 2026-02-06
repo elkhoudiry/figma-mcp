@@ -299,6 +299,12 @@ async function handleCommand(command, params) {
       return await getVariantProperties(params);
     case "set_variant_properties":
       return await setVariantProperties(params);
+    case "rename_node":
+      return await renameNode(params);
+    case "set_visibility":
+      return await setVisibility(params);
+    case "set_text_align":
+      return await setTextAlign(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -469,7 +475,11 @@ async function getNodeInfo(nodeId) {
     format: "JSON_REST_V1",
   });
 
-  return filterFigmaNode(response.document);
+  const filtered = filterFigmaNode(response.document);
+  if (filtered) {
+    return Object.assign({}, filtered, { visible: node.visible });
+  }
+  return filtered;
 }
 
 async function getNodesInfo(nodeIds) {
@@ -1040,6 +1050,7 @@ async function setStrokeColor(params) {
     nodeId,
     color: { r, g, b, a },
     weight = 1,
+    strokeWeightVariableId,
   } = params || {};
 
   if (!nodeId) {
@@ -1079,6 +1090,15 @@ async function setStrokeColor(params) {
   // Set stroke weight if available
   if ("strokeWeight" in node) {
     node.strokeWeight = weight;
+  }
+
+  // Bind stroke weight to variable if provided
+  if (strokeWeightVariableId) {
+    const variable = await figma.variables.getVariableByIdAsync(strokeWeightVariableId);
+    if (!variable) {
+      throw new Error(`Variable not found with ID: ${strokeWeightVariableId}`);
+    }
+    node.setBoundVariable('strokeWeight', variable);
   }
 
   return {
@@ -2494,6 +2514,20 @@ async function setAutoLayout(params) {
     if (gridColumnSizes !== undefined) node.gridColumnSizes = gridColumnSizes;
   }
 
+  // Bind spacing/padding properties to variables if provided
+  if (boundVariables && typeof boundVariables === 'object') {
+    const bindableProps = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'itemSpacing', 'counterAxisSpacing'];
+    for (const prop of bindableProps) {
+      if (boundVariables[prop]) {
+        const variable = await figma.variables.getVariableByIdAsync(boundVariables[prop]);
+        if (!variable) {
+          throw new Error(`Variable not found with ID: ${boundVariables[prop]} for property '${prop}'`);
+        }
+        node.setBoundVariable(prop, variable);
+      }
+    }
+  }
+
   var result = {
     nodeId: node.id,
     nodeName: node.name,
@@ -2865,6 +2899,91 @@ async function createComponentInstance(params) {
   } catch (error) {
     throw new Error("Error creating component instance: " + error.message);
   }
+}
+
+async function renameNode(params) {
+  const { nodeId, name } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+  if (name === undefined || name === null) {
+    throw new Error("Missing name parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  const oldName = node.name;
+  node.name = name;
+
+  return {
+    id: node.id,
+    oldName: oldName,
+    newName: node.name,
+    type: node.type,
+  };
+}
+
+async function setVisibility(params) {
+  const { nodeId, visible } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+  if (visible === undefined || visible === null) {
+    throw new Error("Missing visible parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  node.visible = visible;
+
+  return {
+    id: node.id,
+    name: node.name,
+    visible: node.visible,
+    type: node.type,
+  };
+}
+
+async function setTextAlign(params) {
+  const { nodeId, textAlignHorizontal, textAlignVertical } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (node.type !== "TEXT") {
+    throw new Error(`Node is not a text node (type: ${node.type})`);
+  }
+
+  // Load the font before modifying text properties
+  await figma.loadFontAsync(node.fontName);
+
+  if (textAlignHorizontal !== undefined) {
+    node.textAlignHorizontal = textAlignHorizontal;
+  }
+  if (textAlignVertical !== undefined) {
+    node.textAlignVertical = textAlignVertical;
+  }
+
+  return {
+    id: node.id,
+    name: node.name,
+    textAlignHorizontal: node.textAlignHorizontal,
+    textAlignVertical: node.textAlignVertical,
+  };
 }
 
 async function replaceWithInstance(params) {
@@ -5364,7 +5483,7 @@ async function setLayoutMode(params) {
 }
 
 async function setPadding(params) {
-  const { nodeId, paddingTop, paddingRight, paddingBottom, paddingLeft } =
+  const { nodeId, paddingTop, paddingRight, paddingBottom, paddingLeft, boundVariables } =
     params || {};
 
   // Get the target node
@@ -5395,6 +5514,20 @@ async function setPadding(params) {
   if (paddingRight !== undefined) node.paddingRight = paddingRight;
   if (paddingBottom !== undefined) node.paddingBottom = paddingBottom;
   if (paddingLeft !== undefined) node.paddingLeft = paddingLeft;
+
+  // Bind padding properties to variables if provided
+  if (boundVariables && typeof boundVariables === 'object') {
+    const bindableProps = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'];
+    for (const prop of bindableProps) {
+      if (boundVariables[prop]) {
+        const variable = await figma.variables.getVariableByIdAsync(boundVariables[prop]);
+        if (!variable) {
+          throw new Error(`Variable not found with ID: ${boundVariables[prop]} for property '${prop}'`);
+        }
+        node.setBoundVariable(prop, variable);
+      }
+    }
+  }
 
   return {
     id: node.id,
@@ -5560,7 +5693,7 @@ async function setLayoutSizing(params) {
 }
 
 async function setItemSpacing(params) {
-  const { nodeId, itemSpacing, counterAxisSpacing } = params || {};
+  const { nodeId, itemSpacing, counterAxisSpacing, boundVariables } = params || {};
 
   // Validate that at least one spacing parameter is provided
   if (itemSpacing === undefined && counterAxisSpacing === undefined) {
@@ -5610,6 +5743,20 @@ async function setItemSpacing(params) {
       );
     }
     node.counterAxisSpacing = counterAxisSpacing;
+  }
+
+  // Bind spacing properties to variables if provided
+  if (boundVariables && typeof boundVariables === 'object') {
+    const bindableProps = ['itemSpacing', 'counterAxisSpacing'];
+    for (const prop of bindableProps) {
+      if (boundVariables[prop]) {
+        const variable = await figma.variables.getVariableByIdAsync(boundVariables[prop]);
+        if (!variable) {
+          throw new Error(`Variable not found with ID: ${boundVariables[prop]} for property '${prop}'`);
+        }
+        node.setBoundVariable(prop, variable);
+      }
+    }
   }
 
   return {
