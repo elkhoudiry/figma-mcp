@@ -147,6 +147,8 @@ async function handleCommand(command, params) {
     //   return await getTeamComponents();
     case "create_component_instance":
       return await createComponentInstance(params);
+    case "replace_with_instance":
+      return await replaceWithInstance(params);
     case "export_node_as_image":
       return await exportNodeAsImage(params);
     case "set_corner_radius":
@@ -2418,7 +2420,7 @@ async function batchApplyStyles(params) {
 }
 
 async function setAutoLayout(params) {
-  const { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes } = params || {};
+  const { nodeId, mode, padding, itemSpacing, counterAxisSpacing, primaryAxisAlignItems, counterAxisAlignItems, layoutSizingHorizontal, layoutSizingVertical, layoutWrap, gridRowCount, gridColumnCount, gridRowGap, gridColumnGap, gridRowSizes, gridColumnSizes, boundVariables } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -2865,6 +2867,84 @@ async function createComponentInstance(params) {
   }
 }
 
+async function replaceWithInstance(params) {
+  const { nodeId, componentKey } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+  if (!componentKey) {
+    throw new Error("Missing componentKey parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  const parent = node.parent;
+  if (!parent) {
+    throw new Error("Node has no parent — cannot replace a root node");
+  }
+
+  // Find the node's index in its parent
+  let index = -1;
+  for (let i = 0; i < parent.children.length; i++) {
+    if (parent.children[i].id === nodeId) {
+      index = i;
+      break;
+    }
+  }
+  if (index === -1) {
+    throw new Error("Could not find node index in parent");
+  }
+
+  // Find the component by key
+  let component = null;
+  await figma.loadAllPagesAsync();
+  const localComponents = figma.root.findAllWithCriteria({ types: ["COMPONENT"] });
+  for (const c of localComponents) {
+    if (c.key === componentKey) {
+      component = c;
+      break;
+    }
+  }
+
+  if (!component) {
+    component = await figma.importComponentByKeyAsync(componentKey);
+  }
+
+  if (!component) {
+    throw new Error("Component not found with key: " + componentKey);
+  }
+
+  // Create instance and insert at the same index
+  const instance = component.createInstance();
+  parent.insertChild(index, instance);
+
+  // Copy size from original node
+  instance.resize(node.width, node.height);
+
+  // Copy position for non-auto-layout parents
+  instance.x = node.x;
+  instance.y = node.y;
+
+  // Remove original node
+  node.remove();
+
+  return {
+    id: instance.id,
+    name: instance.name,
+    x: instance.x,
+    y: instance.y,
+    width: instance.width,
+    height: instance.height,
+    componentId: instance.componentId,
+    parentId: parent.id,
+    parentName: parent.name,
+  };
+}
+
 async function exportNodeAsImage(params) {
   const { nodeId, scale = 1 } = params || {};
 
@@ -2977,7 +3057,7 @@ function customBase64Encode(bytes) {
 }
 
 async function setCornerRadius(params) {
-  const { nodeId, radius, corners } = params || {};
+  const { nodeId, radius, corners, variableId } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -3014,10 +3094,34 @@ async function setCornerRadius(params) {
     node.cornerRadius = radius;
   }
 
+  // Bind corner radius to a variable if variableId is provided
+  if (variableId) {
+    const variable = await figma.variables.getVariableByIdAsync(variableId);
+    if (!variable) {
+      throw new Error(`Variable not found with ID: ${variableId}`);
+    }
+
+    const cornerProps = ["topLeftRadius", "topRightRadius", "bottomRightRadius", "bottomLeftRadius"];
+    if (corners && Array.isArray(corners) && corners.length === 4) {
+      for (let i = 0; i < 4; i++) {
+        if (corners[i]) {
+          node.setBoundVariable(cornerProps[i], variable);
+        }
+      }
+    } else {
+      for (const prop of cornerProps) {
+        node.setBoundVariable(prop, variable);
+      }
+    }
+  }
+
+  // figma.mixed is a Symbol and cannot be serialized through postMessage
+  const safeRadius = (val) => (typeof val === "number" ? val : "mixed");
+
   return {
     id: node.id,
     name: node.name,
-    cornerRadius: "cornerRadius" in node ? node.cornerRadius : undefined,
+    cornerRadius: "cornerRadius" in node ? safeRadius(node.cornerRadius) : undefined,
     topLeftRadius: "topLeftRadius" in node ? node.topLeftRadius : undefined,
     topRightRadius: "topRightRadius" in node ? node.topRightRadius : undefined,
     bottomRightRadius:

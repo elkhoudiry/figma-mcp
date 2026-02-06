@@ -2176,6 +2176,42 @@ server.tool(
   }
 );
 
+// Replace Node with Component Instance Tool
+server.tool(
+  "replace_with_instance",
+  "Replace an existing node with a component instance in-place. Preserves position in parent auto-layout order. The original node is removed after replacement.",
+  {
+    nodeId: z.string().describe("The ID of the node to replace"),
+    componentKey: z.string().describe("The key of the component to instantiate (from get_local_components or create_component)"),
+  },
+  async ({ nodeId, componentKey }: any) => {
+    try {
+      const result = await sendCommandToFigma("replace_with_instance", {
+        nodeId,
+        componentKey,
+      });
+      const typedResult = result as any;
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(typedResult),
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error replacing node with instance: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Copy Instance Overrides Tool
 server.tool(
   "get_instance_overrides",
@@ -2266,7 +2302,7 @@ server.tool(
 // Set Corner Radius Tool
 server.tool(
   "set_corner_radius",
-  "Set the corner radius of a node in Figma",
+  "Set the corner radius of a node in Figma. Optionally bind the radius to a Figma variable.",
   {
     nodeId: z.string().describe("The ID of the node to modify"),
     radius: z.number().min(0).describe("Corner radius value"),
@@ -2277,20 +2313,28 @@ server.tool(
       .describe(
         "Optional array of 4 booleans to specify which corners to round [topLeft, topRight, bottomRight, bottomLeft]"
       ),
+    variableId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional variable ID to bind the corner radius to (e.g. a FLOAT variable from list_variables). Binds all four corners, or only the corners specified by the corners array."
+      ),
   },
-  async ({ nodeId, radius, corners }: any) => {
+  async ({ nodeId, radius, corners, variableId }: any) => {
     try {
       const result = await sendCommandToFigma("set_corner_radius", {
         nodeId,
         radius,
         corners: corners || [true, true, true, true],
+        variableId,
       });
       const typedResult = result as { name: string };
+      const bound = variableId ? ` and bound to variable ${variableId}` : "";
       return {
         content: [
           {
             type: "text",
-            text: `Set corner radius of node "${typedResult.name}" to ${radius}px`,
+            text: `Set corner radius of node "${typedResult.name}" to ${radius}px${bound}`,
           },
         ],
       };
@@ -3816,6 +3860,7 @@ type FigmaCommand =
   | "get_local_components"
   | "get_team_components"
   | "create_component_instance"
+  | "replace_with_instance"
   | "get_instance_overrides"
   | "set_instance_overrides"
   | "export_node_as_image"
@@ -4113,6 +4158,10 @@ type CommandParams = {
     x: number;
     y: number;
   };
+  replace_with_instance: {
+    nodeId: string;
+    componentKey: string;
+  };
   get_instance_overrides: {
     instanceNodeId: string | null;
   };
@@ -4135,6 +4184,7 @@ type CommandParams = {
     nodeId: string;
     radius: number;
     corners?: boolean[];
+    variableId?: string;
   };
   clone_node: {
     nodeId: string;

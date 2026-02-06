@@ -2,7 +2,7 @@
   "mcpServers": {
     "TalkToFigma": {
       "command": "bun",
-      "args": ["/Users/ahmed/gits/cursor-talk-to-figma-mcp/dist/server.js"]
+      "args": ["/Users/ahmed/gits/ryinex/figma-mcp/dist/server.js"]
     }
   }
 }
