@@ -1110,14 +1110,10 @@ async function setStrokeColor(params) {
 }
 
 async function moveNode(params) {
-  const { nodeId, x, y } = params || {};
+  const { nodeId, x, y, parentId } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
-  }
-
-  if (x === undefined || y === undefined) {
-    throw new Error("Missing x or y parameters");
   }
 
   const node = await figma.getNodeByIdAsync(nodeId);
@@ -1129,14 +1125,29 @@ async function moveNode(params) {
     throw new Error(`Node does not support position: ${nodeId}`);
   }
 
-  node.x = x;
-  node.y = y;
+  // Reparent node if parentId is provided
+  if (parentId) {
+    const newParent = await figma.getNodeByIdAsync(parentId);
+    if (!newParent) {
+      throw new Error(`Parent node not found with ID: ${parentId}`);
+    }
+    if (!("appendChild" in newParent)) {
+      throw new Error(`Parent node does not support children: ${parentId} (type: ${newParent.type})`);
+    }
+    newParent.appendChild(node);
+  }
+
+  // Set position if provided
+  if (x !== undefined) node.x = x;
+  if (y !== undefined) node.y = y;
 
   return {
     id: node.id,
     name: node.name,
     x: node.x,
     y: node.y,
+    parentId: node.parent ? node.parent.id : undefined,
+    parentName: node.parent ? node.parent.name : undefined,
   };
 }
 

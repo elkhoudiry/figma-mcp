@@ -814,21 +814,25 @@ server.tool(
 // Move Node Tool
 server.tool(
   "move_node",
-  "Move a node to a new position in Figma",
+  "Move a node to a new position and/or reparent it under a different parent in Figma. When parentId is provided, the node is appended as the last child of the new parent. Position (x, y) is optional — if omitted, the node keeps its current coordinates.",
   {
     nodeId: z.string().describe("The ID of the node to move"),
-    x: z.number().describe("New X position"),
-    y: z.number().describe("New Y position"),
+    x: z.number().optional().describe("New X position (optional if only reparenting)"),
+    y: z.number().optional().describe("New Y position (optional if only reparenting)"),
+    parentId: z.string().optional().describe("ID of the new parent node to move this node into (reparent). The node will be appended as the last child."),
   },
-  async ({ nodeId, x, y }: any) => {
+  async ({ nodeId, x, y, parentId }: any) => {
     try {
-      const result = await sendCommandToFigma("move_node", { nodeId, x, y });
-      const typedResult = result as { name: string };
+      const result = await sendCommandToFigma("move_node", { nodeId, x, y, parentId });
+      const typedResult = result as { name: string; x: number; y: number; parentName?: string };
+      const parts = [];
+      if (parentId) parts.push(`reparented under "${typedResult.parentName}"`);
+      if (x !== undefined && y !== undefined) parts.push(`positioned at (${typedResult.x}, ${typedResult.y})`);
       return {
         content: [
           {
             type: "text",
-            text: `Moved node "${typedResult.name}" to position (${x}, ${y})`,
+            text: `Moved node "${typedResult.name}": ${parts.join(', ')}`,
           },
         ],
       };
@@ -4079,8 +4083,9 @@ type CommandParams = {
   };
   move_node: {
     nodeId: string;
-    x: number;
-    y: number;
+    x?: number;
+    y?: number;
+    parentId?: string;
   };
   resize_node: {
     nodeId: string;
