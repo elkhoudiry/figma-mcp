@@ -558,6 +558,35 @@ async function getNodeInfoDetailed(nodeId) {
 
   var result = Object.assign({}, basicInfo);
 
+  // Check for plugin data source tag (svg, image) and detect SVG frames
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (node) {
+    var source = node.getPluginData("source");
+    if (source) {
+      result.pluginData = { source: source };
+    }
+
+    // Heuristic: a FRAME whose descendant tree is all vector/group types is likely an SVG
+    var svgTypes = ["VECTOR", "BOOLEAN_OPERATION", "LINE", "ELLIPSE", "STAR", "REGULAR_POLYGON", "GROUP", "FRAME"];
+    if (node.type === "FRAME" && "children" in node && node.children.length > 0) {
+      var isSvg = true;
+      var stack = [].concat(node.children);
+      while (stack.length > 0 && isSvg) {
+        var child = stack.pop();
+        if (svgTypes.indexOf(child.type) === -1) {
+          isSvg = false;
+        } else if ("children" in child && child.children.length > 0) {
+          for (var ci = 0; ci < child.children.length; ci++) {
+            stack.push(child.children[ci]);
+          }
+        }
+      }
+      if (isSvg) {
+        result.likelySvg = true;
+      }
+    }
+  }
+
   // Merge styles (exclude nodeId/nodeName/nodeType metadata)
   var styleProps = {};
   if (styles.fillStyle) styleProps.fillStyle = styles.fillStyle;
@@ -6497,6 +6526,7 @@ async function createNodeFromSvg(params) {
   var node = figma.createNodeFromSvg(svgContent);
   node.x = x;
   node.y = y;
+  node.setPluginData("source", "svg");
 
   if (name) {
     node.name = name;
@@ -6553,6 +6583,7 @@ async function createImage(params) {
   rect.x = x;
   rect.y = y;
   rect.name = name;
+  rect.setPluginData("source", "image");
   rect.fills = [{
     type: "IMAGE",
     imageHash: hash,

@@ -208,6 +208,11 @@ def flatten_node(node, parent_id="-", rows=None):
         if props:
             effect_style_effects = extract_effects_summary(props.get("effects", []))
 
+    # Source / SVG detection
+    plugin_data = node.get("pluginData", {})
+    source = plugin_data.get("source", "-") if plugin_data else "-"
+    likely_svg = node.get("likelySvg", False)
+
     # Bound variables
     bound_vars = extract_bound_vars_summary(node.get("boundVariables"))
 
@@ -278,6 +283,8 @@ def flatten_node(node, parent_id="-", rows=None):
         "effectStyleName": effect_style_name,
         "effectStyleEffects": effect_style_effects,
         "boundVars": bound_vars,
+        "source": source,
+        "likelySvg": likely_svg,
     })
 
     for child in node.get("children", []):
@@ -316,6 +323,7 @@ def to_markdown(rows):
         "textStyleName", "textStyleProps",
         "effectStyleName", "effectStyleEffects",
         "boundVars",
+        "source", "likelySvg",
     ]
 
     header = "| " + " | ".join(columns) + " |"
