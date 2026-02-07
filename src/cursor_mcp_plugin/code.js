@@ -312,6 +312,10 @@ async function handleCommand(command, params) {
       return await setVisibility(params);
     case "set_text_align":
       return await setTextAlign(params);
+    case "create_node_from_svg":
+      return await createNodeFromSvg(params);
+    case "create_image":
+      return await createImage(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -6476,5 +6480,106 @@ async function setSelections(params) {
     selectedNodes: selectedNodes,
     notFoundIds: notFoundIds,
     message: `Selected ${nodes.length} nodes${notFoundIds.length > 0 ? ` (${notFoundIds.length} not found)` : ''}`
+  };
+}
+
+async function createNodeFromSvg(params) {
+  var svgContent = params.svgContent;
+  var x = params.x !== undefined ? params.x : 0;
+  var y = params.y !== undefined ? params.y : 0;
+  var name = params.name;
+  var parentId = params.parentId;
+
+  if (!svgContent) {
+    throw new Error("Missing svgContent parameter");
+  }
+
+  var node = figma.createNodeFromSvg(svgContent);
+  node.x = x;
+  node.y = y;
+
+  if (name) {
+    node.name = name;
+  }
+
+  if (parentId) {
+    var parentNode = await figma.getNodeByIdAsync(parentId);
+    if (!parentNode) {
+      throw new Error("Parent node not found with ID: " + parentId);
+    }
+    if (!("appendChild" in parentNode)) {
+      throw new Error("Parent node does not support children: " + parentId);
+    }
+    parentNode.appendChild(node);
+  } else {
+    figma.currentPage.appendChild(node);
+  }
+
+  return {
+    id: node.id,
+    name: node.name,
+    x: node.x,
+    y: node.y,
+    width: node.width,
+    height: node.height,
+    parentId: node.parent ? node.parent.id : undefined,
+  };
+}
+
+async function createImage(params) {
+  var imageData = params.imageData;
+  var width = params.width;
+  var height = params.height;
+  var x = params.x !== undefined ? params.x : 0;
+  var y = params.y !== undefined ? params.y : 0;
+  var name = params.name || "Image";
+  var parentId = params.parentId;
+  var scaleMode = params.scaleMode || "FILL";
+
+  if (!imageData) {
+    throw new Error("Missing imageData parameter (base64 string)");
+  }
+  if (width === undefined || height === undefined) {
+    throw new Error("Missing width or height parameter");
+  }
+
+  var bytes = figma.base64Decode(imageData);
+
+  var image = figma.createImage(bytes);
+  var hash = image.hash;
+
+  var rect = figma.createRectangle();
+  rect.resize(width, height);
+  rect.x = x;
+  rect.y = y;
+  rect.name = name;
+  rect.fills = [{
+    type: "IMAGE",
+    imageHash: hash,
+    scaleMode: scaleMode,
+  }];
+
+  if (parentId) {
+    var parentNode = await figma.getNodeByIdAsync(parentId);
+    if (!parentNode) {
+      throw new Error("Parent node not found with ID: " + parentId);
+    }
+    if (!("appendChild" in parentNode)) {
+      throw new Error("Parent node does not support children: " + parentId);
+    }
+    parentNode.appendChild(rect);
+  } else {
+    figma.currentPage.appendChild(rect);
+  }
+
+  return {
+    id: rect.id,
+    name: rect.name,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    imageHash: hash,
+    parentId: rect.parent ? rect.parent.id : undefined,
   };
 }

@@ -2540,6 +2540,96 @@ server.tool(
   }
 );
 
+// Create Node from SVG Tool
+server.tool(
+  "create_node_from_svg",
+  "Create a node from an SVG string in Figma. The SVG content is parsed and rendered as a FrameNode containing vector children.",
+  {
+    svgContent: z.string().describe("The SVG content string to create a node from"),
+    x: z.number().optional().describe("Optional X position (default 0)"),
+    y: z.number().optional().describe("Optional Y position (default 0)"),
+    name: z.string().optional().describe("Optional name for the created node"),
+    parentId: z.string().optional().describe("Optional parent node ID to append the node to"),
+  },
+  async ({ svgContent, x, y, name, parentId }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_node_from_svg", {
+        svgContent,
+        x,
+        y,
+        name,
+        parentId,
+      });
+      const typedResult = result as { id: string; name: string; x: number; y: number; width: number; height: number; parentId?: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created SVG node "${typedResult.name}" (ID: ${typedResult.id}) at (${typedResult.x}, ${typedResult.y}) with dimensions ${typedResult.width}x${typedResult.height}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating node from SVG: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Create Image Tool
+server.tool(
+  "create_image",
+  "Create an image node in Figma from base64-encoded image data (PNG, JPG, etc). Creates a rectangle filled with the image.",
+  {
+    imageData: z.string().describe("Base64-encoded image data (without data URI prefix)"),
+    width: z.number().describe("Width of the image node"),
+    height: z.number().describe("Height of the image node"),
+    x: z.number().optional().describe("Optional X position (default 0)"),
+    y: z.number().optional().describe("Optional Y position (default 0)"),
+    name: z.string().optional().describe("Optional name for the image node (default 'Image')"),
+    parentId: z.string().optional().describe("Optional parent node ID to append the image to"),
+    scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("Image scale mode (default 'FILL')"),
+  },
+  async ({ imageData, width, height, x, y, name, parentId, scaleMode }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_image", {
+        imageData,
+        width,
+        height,
+        x,
+        y,
+        name,
+        parentId,
+        scaleMode,
+      });
+      const typedResult = result as { id: string; name: string; x: number; y: number; width: number; height: number; imageHash: string; parentId?: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created image "${typedResult.name}" (ID: ${typedResult.id}) at (${typedResult.x}, ${typedResult.y}) with dimensions ${typedResult.width}x${typedResult.height}, imageHash: ${typedResult.imageHash}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating image: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Define design strategy prompt
 server.prompt(
   "design_strategy",
@@ -4096,7 +4186,9 @@ type FigmaCommand =
   | "set_variable_value"
   | "rename_node"
   | "set_visibility"
-  | "set_text_align";
+  | "set_text_align"
+  | "create_node_from_svg"
+  | "create_image";
 
 // Define the parameters for each command
 type CommandParams = {
@@ -4517,6 +4609,23 @@ type CommandParams = {
     nodeId: string;
     textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
     textAlignVertical?: "TOP" | "CENTER" | "BOTTOM";
+  };
+  create_node_from_svg: {
+    svgContent: string;
+    x?: number;
+    y?: number;
+    name?: string;
+    parentId?: string;
+  };
+  create_image: {
+    imageData: string;
+    width: number;
+    height: number;
+    x?: number;
+    y?: number;
+    name?: string;
+    parentId?: string;
+    scaleMode?: "FILL" | "FIT" | "CROP" | "TILE";
   };
 };
 
