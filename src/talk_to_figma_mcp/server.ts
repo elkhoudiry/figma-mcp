@@ -178,7 +178,7 @@ server.tool(
 // Node Info Tool
 server.tool(
   "get_node_info",
-  "Get detailed information about a specific node in Figma",
+  "Get basic information about a node in Figma — returns filtered properties (id, name, type, fills as hex, strokes, cornerRadius, boundingBox, text characters, font style, children). Best for general-purpose reads during design creation and modification. Use get_node_info_detailed instead when auditing or reviewing.",
   {
     nodeId: z.string().describe("The ID of the node to get information about"),
   },
@@ -200,6 +200,37 @@ server.tool(
             type: "text",
             text: `Error getting node info: ${error instanceof Error ? error.message : String(error)
               }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Detailed Node Info Tool
+server.tool(
+  "get_node_info_detailed",
+  "Get comprehensive node data for auditing and design reviews. Returns basic info, applied styles (fill, stroke, text, effect), bound variables, and raw paints (unfiltered fills/strokes with boundVariables intact) — all in a single call. Use this when verifying correct style/variable usage or reviewing implementation accuracy. For general-purpose reads during creation, use get_node_info instead.",
+  {
+    nodeId: z.string().describe("The ID of the node to get detailed information about"),
+  },
+  async ({ nodeId }: { nodeId: string }) => {
+    try {
+      const result = await sendCommandToFigma("get_node_info_detailed", { nodeId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting detailed node info: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };
@@ -3949,6 +3980,7 @@ type FigmaCommand =
   | "get_document_info"
   | "get_selection"
   | "get_node_info"
+  | "get_node_info_detailed"
   | "get_nodes_info"
   | "read_my_design"
   | "create_rectangle"
@@ -4029,6 +4061,7 @@ type CommandParams = {
   get_document_info: Record<string, never>;
   get_selection: Record<string, never>;
   get_node_info: { nodeId: string };
+  get_node_info_detailed: { nodeId: string };
   get_nodes_info: { nodeIds: string[] };
   create_rectangle: {
     x: number;

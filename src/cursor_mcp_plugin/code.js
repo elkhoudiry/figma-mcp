@@ -114,6 +114,11 @@ async function handleCommand(command, params) {
         throw new Error("Missing nodeId parameter");
       }
       return await getNodeInfo(params.nodeId);
+    case "get_node_info_detailed":
+      if (!params || !params.nodeId) {
+        throw new Error("Missing nodeId parameter");
+      }
+      return await getNodeInfoDetailed(params.nodeId);
     case "get_nodes_info":
       if (!params || !params.nodeIds || !Array.isArray(params.nodeIds)) {
         throw new Error("Missing or invalid nodeIds parameter");
@@ -480,6 +485,43 @@ async function getNodeInfo(nodeId) {
     return Object.assign({}, filtered, { visible: node.visible });
   }
   return filtered;
+}
+
+async function getNodeInfoDetailed(nodeId) {
+  var results = await Promise.all([
+    getNodeInfo(nodeId),
+    getNodeStyles({ nodeId: nodeId }),
+    getNodeVariables({ nodeId: nodeId }),
+    getNodePaints({ nodeId: nodeId, paintsType: "fills" }).catch(function() { return null; }),
+    getNodePaints({ nodeId: nodeId, paintsType: "strokes" }).catch(function() { return null; }),
+  ]);
+
+  var basicInfo = results[0];
+  var styles = results[1];
+  var variables = results[2];
+  var rawFills = results[3];
+  var rawStrokes = results[4];
+
+  var result = Object.assign({}, basicInfo);
+
+  // Merge styles (exclude nodeId/nodeName/nodeType metadata)
+  var styleProps = {};
+  if (styles.fillStyle) styleProps.fillStyle = styles.fillStyle;
+  if (styles.strokeStyle) styleProps.strokeStyle = styles.strokeStyle;
+  if (styles.textStyle) styleProps.textStyle = styles.textStyle;
+  if (styles.effectStyle) styleProps.effectStyle = styles.effectStyle;
+  result.styles = styleProps;
+
+  // Merge bound variables
+  result.boundVariables = variables.boundVariables || null;
+
+  // Merge raw paints
+  result.rawPaints = {
+    fills: rawFills ? rawFills.fills : null,
+    strokes: rawStrokes ? rawStrokes.strokes : null,
+  };
+
+  return result;
 }
 
 async function getNodesInfo(nodeIds) {
