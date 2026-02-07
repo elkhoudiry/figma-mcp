@@ -1194,7 +1194,9 @@ async function moveNode(params) {
 }
 
 async function resizeNode(params) {
-  const { nodeId, width, height } = params || {};
+  var nodeId = params && params.nodeId;
+  var width = params && params.width;
+  var height = params && params.height;
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -1204,13 +1206,19 @@ async function resizeNode(params) {
     throw new Error("Missing width or height parameters");
   }
 
-  const node = await figma.getNodeByIdAsync(nodeId);
+  var node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
-    throw new Error(`Node not found with ID: ${nodeId}`);
+    throw new Error("Node not found with ID: " + nodeId);
   }
 
   if (!("resize" in node)) {
-    throw new Error(`Node does not support resizing: ${nodeId}`);
+    throw new Error("Node does not support resizing: " + nodeId);
+  }
+
+  // Check if node is inside an instance (instance child IDs contain ";")
+  var isInstanceChild = nodeId.indexOf(";") !== -1;
+  if (isInstanceChild) {
+    throw new Error("Cannot resize instance children. Resize the instance itself or detach it first. Node: " + nodeId);
   }
 
   node.resize(width, height);
@@ -2906,7 +2914,10 @@ async function setGridChild(params) {
 // }
 
 async function createComponentInstance(params) {
-  const { componentKey, x = 0, y = 0 } = params || {};
+  var componentKey = params && params.componentKey;
+  var x = (params && params.x !== undefined) ? params.x : 0;
+  var y = (params && params.y !== undefined) ? params.y : 0;
+  var parentId = params && params.parentId;
 
   if (!componentKey) {
     throw new Error("Missing componentKey parameter");
@@ -2914,12 +2925,12 @@ async function createComponentInstance(params) {
 
   try {
     // Try local components first (by key)
-    let component = null;
+    var component = null;
     await figma.loadAllPagesAsync();
-    const localComponents = figma.root.findAllWithCriteria({ types: ["COMPONENT"] });
-    for (const c of localComponents) {
-      if (c.key === componentKey) {
-        component = c;
+    var localComponents = figma.root.findAllWithCriteria({ types: ["COMPONENT"] });
+    for (var i = 0; i < localComponents.length; i++) {
+      if (localComponents[i].key === componentKey) {
+        component = localComponents[i];
         break;
       }
     }
@@ -2933,12 +2944,24 @@ async function createComponentInstance(params) {
       throw new Error("Component not found with key: " + componentKey);
     }
 
-    const instance = component.createInstance();
+    var instance = component.createInstance();
 
     instance.x = x;
     instance.y = y;
 
-    figma.currentPage.appendChild(instance);
+    // Place in parent if specified, otherwise append to current page
+    if (parentId) {
+      var parent = await figma.getNodeByIdAsync(parentId);
+      if (!parent) {
+        throw new Error("Parent node not found with ID: " + parentId);
+      }
+      if (!("appendChild" in parent)) {
+        throw new Error("Parent node does not support children: " + parentId);
+      }
+      parent.appendChild(instance);
+    } else {
+      figma.currentPage.appendChild(instance);
+    }
 
     return {
       id: instance.id,
@@ -2948,6 +2971,7 @@ async function createComponentInstance(params) {
       width: instance.width,
       height: instance.height,
       componentId: instance.componentId,
+      parentId: instance.parent ? instance.parent.id : null,
     };
   } catch (error) {
     throw new Error("Error creating component instance: " + error.message);

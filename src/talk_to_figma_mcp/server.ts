@@ -918,7 +918,7 @@ server.tool(
 // Resize Node Tool
 server.tool(
   "resize_node",
-  "Resize a node in Figma",
+  "Resize a node in Figma. Cannot resize children of component instances — resize the instance itself or detach it first.",
   {
     nodeId: z.string().describe("The ID of the node to resize"),
     width: z.number().positive().describe("New width"),
@@ -2187,18 +2187,20 @@ server.tool(
 // Create Component Instance Tool
 server.tool(
   "create_component_instance",
-  "Create an instance of a component in Figma",
+  "Create an instance of a component in Figma. Optionally place it inside a parent frame.",
   {
     componentKey: z.string().describe("Key of the component to instantiate"),
     x: z.number().describe("X position"),
     y: z.number().describe("Y position"),
+    parentId: z.string().optional().describe("Optional parent node ID to place the instance inside. If omitted, the instance is added to the current page root."),
   },
-  async ({ componentKey, x, y }: any) => {
+  async ({ componentKey, x, y, parentId }: any) => {
     try {
       const result = await sendCommandToFigma("create_component_instance", {
         componentKey,
         x,
         y,
+        parentId,
       });
       const typedResult = result as any;
       return {
@@ -4330,6 +4332,7 @@ type CommandParams = {
     componentKey: string;
     x: number;
     y: number;
+    parentId?: string;
   };
   replace_with_instance: {
     nodeId: string;
