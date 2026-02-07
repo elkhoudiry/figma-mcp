@@ -292,6 +292,8 @@ async function handleCommand(command, params) {
       return await findNodesWithStyle(params);
     case "batch_apply_styles":
       return await batchApplyStyles(params);
+    case "get_auto_layout":
+      return await getAutoLayout(params);
     case "set_auto_layout":
       return await setAutoLayout(params);
     case "set_grid_child":
@@ -381,6 +383,25 @@ function rgbaToHex(color) {
       })
       .join("")
   );
+}
+
+function convertPaintColors(paints) {
+  return paints.map(function(paint) {
+    var converted = Object.assign({}, paint);
+    if (converted.color && typeof converted.color === "object" && "r" in converted.color) {
+      converted.color = rgbaToHex(converted.color);
+    }
+    if (converted.gradientStops) {
+      converted.gradientStops = converted.gradientStops.map(function(stop) {
+        var s = Object.assign({}, stop);
+        if (s.color && typeof s.color === "object" && "r" in s.color) {
+          s.color = rgbaToHex(s.color);
+        }
+        return s;
+      });
+    }
+    return converted;
+  });
 }
 
 function filterFigmaNode(node) {
@@ -487,20 +508,49 @@ async function getNodeInfo(nodeId) {
   return filtered;
 }
 
+function extractAutoLayoutProps(autoLayout) {
+  if (!autoLayout) return null;
+  var props = {
+    layoutMode: autoLayout.layoutMode,
+    layoutWrap: autoLayout.layoutWrap,
+    primaryAxisAlignItems: autoLayout.primaryAxisAlignItems,
+    counterAxisAlignItems: autoLayout.counterAxisAlignItems,
+    counterAxisAlignContent: autoLayout.counterAxisAlignContent,
+    layoutSizingHorizontal: autoLayout.layoutSizingHorizontal,
+    layoutSizingVertical: autoLayout.layoutSizingVertical,
+    primaryAxisSizingMode: autoLayout.primaryAxisSizingMode,
+    counterAxisSizingMode: autoLayout.counterAxisSizingMode,
+    paddingTop: autoLayout.paddingTop,
+    paddingRight: autoLayout.paddingRight,
+    paddingBottom: autoLayout.paddingBottom,
+    paddingLeft: autoLayout.paddingLeft,
+    itemSpacing: autoLayout.itemSpacing,
+    counterAxisSpacing: autoLayout.counterAxisSpacing,
+    itemReverseZIndex: autoLayout.itemReverseZIndex
+  };
+  if (autoLayout.gridRowCount !== undefined) {
+    props.gridRowCount = autoLayout.gridRowCount;
+    props.gridColumnCount = autoLayout.gridColumnCount;
+    props.gridRowGap = autoLayout.gridRowGap;
+    props.gridColumnGap = autoLayout.gridColumnGap;
+    props.gridRowSizes = autoLayout.gridRowSizes;
+    props.gridColumnSizes = autoLayout.gridColumnSizes;
+  }
+  return props;
+}
+
 async function getNodeInfoDetailed(nodeId) {
   var results = await Promise.all([
     getNodeInfo(nodeId),
     getNodeStyles({ nodeId: nodeId }),
     getNodeVariables({ nodeId: nodeId }),
-    getNodePaints({ nodeId: nodeId, paintsType: "fills" }).catch(function() { return null; }),
-    getNodePaints({ nodeId: nodeId, paintsType: "strokes" }).catch(function() { return null; }),
+    getAutoLayout({ nodeId: nodeId }).catch(function() { return null; }),
   ]);
 
   var basicInfo = results[0];
   var styles = results[1];
   var variables = results[2];
-  var rawFills = results[3];
-  var rawStrokes = results[4];
+  var autoLayout = results[3];
 
   var result = Object.assign({}, basicInfo);
 
@@ -515,11 +565,20 @@ async function getNodeInfoDetailed(nodeId) {
   // Merge bound variables
   result.boundVariables = variables.boundVariables || null;
 
-  // Merge raw paints
-  result.rawPaints = {
-    fills: rawFills ? rawFills.fills : null,
-    strokes: rawStrokes ? rawStrokes.strokes : null,
-  };
+  // Merge auto layout properties (null for non-layout nodes)
+  var layoutProps = extractAutoLayoutProps(autoLayout);
+  if (layoutProps) {
+    result.autoLayout = layoutProps;
+  }
+
+  // Recursively get detailed info for each child
+  if (result.children && result.children.length > 0) {
+    result.children = await Promise.all(
+      result.children.map(function(child) {
+        return getNodeInfoDetailed(child.id);
+      })
+    );
+  }
 
   return result;
 }
@@ -1626,57 +1685,96 @@ async function getNodeStyles(params) {
 
   // Get fill style
   if ("fillStyleId" in node) {
-    const fillStyleId = node.fillStyleId;
+    var fillStyleId = node.fillStyleId;
     if (fillStyleId && fillStyleId !== "" && typeof fillStyleId === "string") {
-      const fillStyle = await figma.getStyleByIdAsync(fillStyleId);
-      result.fillStyle = fillStyle ? {
-        id: fillStyle.id,
-        name: fillStyle.name,
-        key: fillStyle.key,
-        type: fillStyle.type
-      } : { id: fillStyleId };
+      var fillStyle = await figma.getStyleByIdAsync(fillStyleId);
+      if (fillStyle) {
+        result.fillStyle = {
+          id: fillStyle.id,
+          name: fillStyle.name,
+          key: fillStyle.key,
+          type: fillStyle.type,
+          properties: {
+            paints: convertPaintColors(fillStyle.paints)
+          }
+        };
+      } else {
+        result.fillStyle = { id: fillStyleId };
+      }
     }
   }
 
   // Get stroke style
   if ("strokeStyleId" in node) {
-    const strokeStyleId = node.strokeStyleId;
+    var strokeStyleId = node.strokeStyleId;
     if (strokeStyleId && strokeStyleId !== "" && typeof strokeStyleId === "string") {
-      const strokeStyle = await figma.getStyleByIdAsync(strokeStyleId);
-      result.strokeStyle = strokeStyle ? {
-        id: strokeStyle.id,
-        name: strokeStyle.name,
-        key: strokeStyle.key,
-        type: strokeStyle.type
-      } : { id: strokeStyleId };
+      var strokeStyle = await figma.getStyleByIdAsync(strokeStyleId);
+      if (strokeStyle) {
+        result.strokeStyle = {
+          id: strokeStyle.id,
+          name: strokeStyle.name,
+          key: strokeStyle.key,
+          type: strokeStyle.type,
+          properties: {
+            paints: convertPaintColors(strokeStyle.paints)
+          }
+        };
+      } else {
+        result.strokeStyle = { id: strokeStyleId };
+      }
     }
   }
 
   // Get text style
   if ("textStyleId" in node) {
-    const textStyleId = node.textStyleId;
+    var textStyleId = node.textStyleId;
     if (textStyleId && textStyleId !== "" && typeof textStyleId === "string") {
-      const textStyle = await figma.getStyleByIdAsync(textStyleId);
-      result.textStyle = textStyle ? {
-        id: textStyle.id,
-        name: textStyle.name,
-        key: textStyle.key,
-        type: textStyle.type
-      } : { id: textStyleId };
+      var textStyle = await figma.getStyleByIdAsync(textStyleId);
+      if (textStyle) {
+        result.textStyle = {
+          id: textStyle.id,
+          name: textStyle.name,
+          key: textStyle.key,
+          type: textStyle.type,
+          properties: {
+            fontSize: textStyle.fontSize,
+            fontName: textStyle.fontName,
+            textDecoration: textStyle.textDecoration,
+            letterSpacing: textStyle.letterSpacing,
+            lineHeight: textStyle.lineHeight,
+            leadingTrim: textStyle.leadingTrim,
+            paragraphIndent: textStyle.paragraphIndent,
+            paragraphSpacing: textStyle.paragraphSpacing,
+            listSpacing: textStyle.listSpacing,
+            hangingPunctuation: textStyle.hangingPunctuation,
+            hangingList: textStyle.hangingList,
+            textCase: textStyle.textCase
+          }
+        };
+      } else {
+        result.textStyle = { id: textStyleId };
+      }
     }
   }
 
   // Get effect style
   if ("effectStyleId" in node) {
-    const effectStyleId = node.effectStyleId;
+    var effectStyleId = node.effectStyleId;
     if (effectStyleId && effectStyleId !== "" && typeof effectStyleId === "string") {
-      const effectStyle = await figma.getStyleByIdAsync(effectStyleId);
-      result.effectStyle = effectStyle ? {
-        id: effectStyle.id,
-        name: effectStyle.name,
-        key: effectStyle.key,
-        type: effectStyle.type
-      } : { id: effectStyleId };
+      var effectStyle = await figma.getStyleByIdAsync(effectStyleId);
+      if (effectStyle) {
+        result.effectStyle = {
+          id: effectStyle.id,
+          name: effectStyle.name,
+          key: effectStyle.key,
+          type: effectStyle.type,
+          properties: {
+            effects: effectStyle.effects
+          }
+        };
+      } else {
+        result.effectStyle = { id: effectStyleId };
+      }
     }
   }
 
@@ -2498,6 +2596,56 @@ async function batchApplyStyles(params) {
     results: results,
     message: `Applied ${successCount}/${operations.length} style operations`
   };
+}
+
+async function getAutoLayout(params) {
+  var nodeId = params && params.nodeId;
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error("Node not found with ID: " + nodeId);
+  }
+
+  if (!("layoutMode" in node)) {
+    throw new Error("Node type '" + node.type + "' does not support auto-layout.");
+  }
+
+  var result = {
+    nodeId: node.id,
+    name: node.name,
+    type: node.type,
+    layoutMode: node.layoutMode,
+    layoutWrap: node.layoutWrap,
+    primaryAxisAlignItems: node.primaryAxisAlignItems,
+    counterAxisAlignItems: node.counterAxisAlignItems,
+    counterAxisAlignContent: node.counterAxisAlignContent,
+    layoutSizingHorizontal: node.layoutSizingHorizontal,
+    layoutSizingVertical: node.layoutSizingVertical,
+    primaryAxisSizingMode: node.primaryAxisSizingMode,
+    counterAxisSizingMode: node.counterAxisSizingMode,
+    paddingTop: node.paddingTop,
+    paddingRight: node.paddingRight,
+    paddingBottom: node.paddingBottom,
+    paddingLeft: node.paddingLeft,
+    itemSpacing: node.itemSpacing,
+    counterAxisSpacing: node.counterAxisSpacing,
+    itemReverseZIndex: node.itemReverseZIndex
+  };
+
+  // Include grid properties when in GRID mode
+  if (node.layoutMode === "GRID") {
+    result.gridRowCount = node.gridRowCount;
+    result.gridColumnCount = node.gridColumnCount;
+    result.gridRowGap = node.gridRowGap;
+    result.gridColumnGap = node.gridColumnGap;
+    result.gridRowSizes = node.gridRowSizes;
+    result.gridColumnSizes = node.gridColumnSizes;
+  }
+
+  return result;
 }
 
 async function setAutoLayout(params) {

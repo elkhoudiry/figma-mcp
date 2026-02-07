@@ -1774,6 +1774,37 @@ server.tool(
   }
 );
 
+// Get Auto Layout Tool
+server.tool(
+  "get_auto_layout",
+  "Get all auto-layout properties of a frame, component, or component set. Returns layout mode, padding, spacing, alignment, sizing, wrap, and grid properties (if GRID mode). Use this to read the current layout configuration before modifying it.",
+  {
+    nodeId: z.string().describe("The ID of the node to get auto-layout properties from"),
+  },
+  async ({ nodeId }: { nodeId: string }) => {
+    try {
+      const result = await sendCommandToFigma("get_auto_layout", { nodeId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting auto-layout properties: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Set Auto Layout Tool
 server.tool(
   "set_auto_layout",
@@ -4013,6 +4044,7 @@ type FigmaCommand =
   | "duplicate_style"
   | "find_nodes_with_style"
   | "batch_apply_styles"
+  | "get_auto_layout"
   | "set_auto_layout"
   | "set_grid_child"
   | "set_constraints"
@@ -4275,6 +4307,7 @@ type CommandParams = {
       styleType: "fill" | "stroke" | "text" | "effect";
     }>;
   };
+  get_auto_layout: { nodeId: string };
   set_auto_layout: {
     nodeId: string;
     mode?: "NONE" | "HORIZONTAL" | "VERTICAL" | "GRID";
