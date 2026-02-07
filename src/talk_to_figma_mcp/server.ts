@@ -918,25 +918,33 @@ server.tool(
 // Resize Node Tool
 server.tool(
   "resize_node",
-  "Resize a node in Figma. Cannot resize children of component instances — resize the instance itself or detach it first.",
+  "Resize a node in Figma. Optionally bind width/height to Figma variables (FLOAT type). Cannot resize children of component instances — resize the instance itself or detach it first.",
   {
     nodeId: z.string().describe("The ID of the node to resize"),
     width: z.number().positive().describe("New width"),
     height: z.number().positive().describe("New height"),
+    widthVariableId: z.string().optional().describe("Optional variable ID to bind to width (must be a FLOAT variable)"),
+    heightVariableId: z.string().optional().describe("Optional variable ID to bind to height (must be a FLOAT variable)"),
   },
-  async ({ nodeId, width, height }: any) => {
+  async ({ nodeId, width, height, widthVariableId, heightVariableId }: any) => {
     try {
       const result = await sendCommandToFigma("resize_node", {
         nodeId,
         width,
         height,
+        widthVariableId,
+        heightVariableId,
       });
       const typedResult = result as { name: string };
+      const bindings = [];
+      if (widthVariableId) bindings.push(`width bound to variable ${widthVariableId}`);
+      if (heightVariableId) bindings.push(`height bound to variable ${heightVariableId}`);
+      const bindingText = bindings.length > 0 ? ` (${bindings.join(', ')})` : '';
       return {
         content: [
           {
             type: "text",
-            text: `Resized node "${typedResult.name}" to width ${width} and height ${height}`,
+            text: `Resized node "${typedResult.name}" to width ${width} and height ${height}${bindingText}`,
           },
         ],
       };
@@ -3415,7 +3423,7 @@ server.tool(
 // Set Layout Sizing Tool
 server.tool(
   "set_layout_sizing",
-  "Set horizontal and vertical sizing modes for an auto-layout frame in Figma",
+  "Set horizontal and vertical sizing modes for an auto-layout frame in Figma. Does NOT work on Text nodes — Figma does not support layout sizing on text. Wrap the text in a frame and apply FILL to the wrapper instead.",
   {
     nodeId: z.string().describe("The ID of the frame to modify"),
     layoutSizingHorizontal: z
@@ -4158,6 +4166,8 @@ type CommandParams = {
     nodeId: string;
     width: number;
     height: number;
+    widthVariableId?: string;
+    heightVariableId?: string;
   };
   delete_node: {
     nodeId: string;

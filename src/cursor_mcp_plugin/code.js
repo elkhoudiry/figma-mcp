@@ -1282,6 +1282,26 @@ async function resizeNode(params) {
 
   node.resize(width, height);
 
+  // Bind width to a variable if widthVariableId is provided
+  var widthVariableId = params && params.widthVariableId;
+  if (widthVariableId) {
+    var widthVar = await figma.variables.getVariableByIdAsync(widthVariableId);
+    if (!widthVar) {
+      throw new Error("Variable not found with ID: " + widthVariableId);
+    }
+    node.setBoundVariable("width", widthVar);
+  }
+
+  // Bind height to a variable if heightVariableId is provided
+  var heightVariableId = params && params.heightVariableId;
+  if (heightVariableId) {
+    var heightVar = await figma.variables.getVariableByIdAsync(heightVariableId);
+    if (!heightVar) {
+      throw new Error("Variable not found with ID: " + heightVariableId);
+    }
+    node.setBoundVariable("height", heightVar);
+  }
+
   return {
     id: node.id,
     name: node.name,
