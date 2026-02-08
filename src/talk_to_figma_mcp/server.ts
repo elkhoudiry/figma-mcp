@@ -698,14 +698,16 @@ server.tool(
     a: z.number().min(0).max(1).optional().describe("Alpha/opacity component (0-1). 0=fully transparent, 1=fully opaque. Optional, defaults to 1."),
     weight: z.number().positive().optional().describe("Stroke weight in pixels"),
     strokeWeightVariableId: z.string().optional().describe("Optional variable ID to bind the stroke weight to (FLOAT variable from list_variables)"),
+    dashPattern: z.array(z.number().min(0)).optional().describe("Dash pattern as array of numbers [dash, gap, dash, gap, ...]. E.g., [10, 5] for 10px dashes with 5px gaps. Omit for solid strokes."),
   },
-  async ({ nodeId, r, g, b, a, weight, strokeWeightVariableId }: any) => {
+  async ({ nodeId, r, g, b, a, weight, strokeWeightVariableId, dashPattern }: any) => {
     try {
       const result = await sendCommandToFigma("set_stroke_color", {
         nodeId,
         color: { r, g, b, a: a || 1 },
         weight: weight || 1,
         strokeWeightVariableId,
+        dashPattern,
       });
       const typedResult = result as { name: string };
       const bound = strokeWeightVariableId ? ` (weight bound to variable ${strokeWeightVariableId})` : "";

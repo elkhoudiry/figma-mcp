@@ -1,5 +1,23 @@
 # Figma MCP — Project Rules
 
+## Sync: MCP tools and `figma-mcp-list.txt`
+
+When adding, removing, or changing the signature of an MCP tool (`server.tool()` in `server.ts` + handler in `code.js`), you **MUST** update `~/.claude/personal-automation/agents/design/figma-mcp-list.txt` to match, then deploy:
+
+1. **Update the entry** — tool name, description, all parameters with types and required/optional
+2. **Deploy to live** — copy to `~/.claude/agents/design/figma-mcp-list.txt`
+
+The reverse also applies: if the list file describes a parameter that doesn't exist in code, fix the list.
+
+## Sync: MCP limitations and `figma-mcp-limitations.txt`
+
+When fixing a limitation, discovering a new one, or adding/changing a workaround, you **MUST** update `~/.claude/personal-automation/agents/design/figma-mcp-limitations.txt` to match, then deploy:
+
+1. **Update the entry** — tool name, limitation description, and workaround steps
+2. **Deploy to live** — copy to `~/.claude/agents/design/figma-mcp-limitations.txt`
+
+If a limitation is fixed in code, remove it from the file. If a new Figma API limitation is discovered during development or testing, add it.
+
 ## Sync: `get_node_info_detailed` and `figma_node_table.py`
 
 When adding, removing, or renaming a field in the `getNodeInfoDetailed` function (`src/cursor_mcp_plugin/code.js`), you **MUST** update `scripts/figma_node_table.py` to match:

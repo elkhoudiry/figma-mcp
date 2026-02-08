@@ -913,10 +913,10 @@ async function createFrame(params) {
     strokeWeight,
     layoutMode = "NONE",
     layoutWrap = "NO_WRAP",
-    paddingTop = 10,
-    paddingRight = 10,
-    paddingBottom = 10,
-    paddingLeft = 10,
+    paddingTop = 0,
+    paddingRight = 0,
+    paddingBottom = 0,
+    paddingLeft = 0,
     primaryAxisAlignItems = "MIN",
     counterAxisAlignItems = "MIN",
     layoutSizingHorizontal = "FIXED",
@@ -950,10 +950,6 @@ async function createFrame(params) {
     // Set axis alignment only when layoutMode is not NONE
     frame.primaryAxisAlignItems = primaryAxisAlignItems;
     frame.counterAxisAlignItems = counterAxisAlignItems;
-
-    // Set layout sizing only when layoutMode is not NONE
-    frame.layoutSizingHorizontal = layoutSizingHorizontal;
-    frame.layoutSizingVertical = layoutSizingVertical;
 
     // Set item spacing only when layoutMode is not NONE
     frame.itemSpacing = itemSpacing;
@@ -1014,6 +1010,12 @@ async function createFrame(params) {
     parentNode.appendChild(frame);
   } else {
     figma.currentPage.appendChild(frame);
+  }
+
+  // Set layout sizing AFTER appendChild — FILL only works on children of auto-layout frames
+  if (layoutMode !== "NONE") {
+    frame.layoutSizingHorizontal = layoutSizingHorizontal;
+    frame.layoutSizingVertical = layoutSizingVertical;
   }
 
   return {
@@ -1185,6 +1187,7 @@ async function setStrokeColor(params) {
     color: { r, g, b, a },
     weight = 1,
     strokeWeightVariableId,
+    dashPattern,
   } = params || {};
 
   if (!nodeId) {
@@ -1224,6 +1227,11 @@ async function setStrokeColor(params) {
   // Set stroke weight if available
   if ("strokeWeight" in node) {
     node.strokeWeight = weight;
+  }
+
+  // Set dash pattern if provided (e.g., [10, 5] for 10px dash, 5px gap)
+  if (dashPattern && Array.isArray(dashPattern) && "dashPattern" in node) {
+    node.dashPattern = dashPattern;
   }
 
   // Bind stroke weight to variable if provided
@@ -3851,9 +3859,15 @@ async function setNodePaints(params) {
     }
     try {
       var currentPaints = node[paintsType].slice();
-      currentPaints[req.index] = figma.variables.setBoundVariableForPaint(
+      var boundPaint = figma.variables.setBoundVariableForPaint(
         currentPaints[req.index], 'color', variable
       );
+      // Restore user-specified opacity — setBoundVariableForPaint overwrites it
+      // with the variable color's alpha channel
+      if (req.opacity !== undefined) {
+        boundPaint = Object.assign({}, boundPaint, { opacity: req.opacity });
+      }
+      currentPaints[req.index] = boundPaint;
       node[paintsType] = currentPaints;
     } catch (error) {
       throw new Error("Error binding variable to " + paintsType + "[" + req.index + "]: " + error.message);
@@ -5942,13 +5956,6 @@ async function setLayoutSizing(params) {
     throw new Error(`Node type ${node.type} does not support layout sizing`);
   }
 
-  // Check if the node has auto-layout enabled
-  if (node.layoutMode === "NONE") {
-    throw new Error(
-      "Layout sizing requires auto-layout. This node has layoutMode=NONE. Either enable auto-layout first (set_auto_layout), or note that non-auto-layout frames like divider components cannot use FILL/HUG sizing."
-    );
-  }
-
   // Validate and set layoutSizingHorizontal if provided
   if (layoutSizingHorizontal !== undefined) {
     if (!["FIXED", "HUG", "FILL"].includes(layoutSizingHorizontal)) {
@@ -5956,21 +5963,18 @@ async function setLayoutSizing(params) {
         "Invalid layoutSizingHorizontal value. Must be one of: FIXED, HUG, FILL"
       );
     }
-    // HUG is only valid on auto-layout frames and text nodes
-    if (
-      layoutSizingHorizontal === "HUG" &&
-      !["FRAME", "TEXT"].includes(node.type)
-    ) {
+    // HUG requires the node itself to have auto-layout
+    if (layoutSizingHorizontal === "HUG" && node.layoutMode === "NONE") {
       throw new Error(
-        "HUG sizing is only valid on auto-layout frames and text nodes"
+        "HUG sizing requires auto-layout on the node itself. Enable auto-layout first (set_auto_layout)."
       );
     }
-    // FILL is only valid on auto-layout children
+    // FILL requires the parent to have auto-layout
     if (
       layoutSizingHorizontal === "FILL" &&
       (!node.parent || node.parent.layoutMode === "NONE")
     ) {
-      throw new Error("FILL sizing is only valid on auto-layout children");
+      throw new Error("FILL sizing is only valid on children of auto-layout frames");
     }
     node.layoutSizingHorizontal = layoutSizingHorizontal;
   }
@@ -5982,21 +5986,18 @@ async function setLayoutSizing(params) {
         "Invalid layoutSizingVertical value. Must be one of: FIXED, HUG, FILL"
       );
     }
-    // HUG is only valid on auto-layout frames and text nodes
-    if (
-      layoutSizingVertical === "HUG" &&
-      !["FRAME", "TEXT"].includes(node.type)
-    ) {
+    // HUG requires the node itself to have auto-layout
+    if (layoutSizingVertical === "HUG" && node.layoutMode === "NONE") {
       throw new Error(
-        "HUG sizing is only valid on auto-layout frames and text nodes"
+        "HUG sizing requires auto-layout on the node itself. Enable auto-layout first (set_auto_layout)."
       );
     }
-    // FILL is only valid on auto-layout children
+    // FILL requires the parent to have auto-layout
     if (
       layoutSizingVertical === "FILL" &&
       (!node.parent || node.parent.layoutMode === "NONE")
     ) {
-      throw new Error("FILL sizing is only valid on auto-layout children");
+      throw new Error("FILL sizing is only valid on children of auto-layout frames");
     }
     node.layoutSizingVertical = layoutSizingVertical;
   }
