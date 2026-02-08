@@ -1070,6 +1070,48 @@ server.tool(
   }
 );
 
+// Export Node as Base64 Tool
+server.tool(
+  "export_node_as_base64",
+  "Export a node from Figma as a base64-encoded string. Returns raw base64 text that can be decoded and saved to disk client-side (e.g. echo '<base64>' | base64 -d > file.png).",
+  {
+    nodeId: z.string().describe("The ID of the node to export"),
+    format: z
+      .enum(["PNG", "JPG", "SVG", "PDF"])
+      .optional()
+      .describe("Export format (default PNG)"),
+    scale: z.number().positive().optional().describe("Export scale (default 1)"),
+  },
+  async ({ nodeId, format, scale }: any) => {
+    try {
+      const result = await sendCommandToFigma("export_node_as_image", {
+        nodeId,
+        format: format || "PNG",
+        scale: scale || 1,
+      });
+      const typedResult = result as { imageData: string; mimeType: string };
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: typedResult.imageData,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error exporting node as base64: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Set Text Content Tool
 server.tool(
   "set_text_content",
