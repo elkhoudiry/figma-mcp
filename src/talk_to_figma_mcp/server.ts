@@ -795,13 +795,20 @@ server.tool(
         visible: z.boolean().optional(),
         opacity: z.number().min(0).max(1).optional(),
         blendMode: z.string().optional(),
+        color: z.object({
+          r: z.number().min(0).max(1),
+          g: z.number().min(0).max(1),
+          b: z.number().min(0).max(1),
+          a: z.number().min(0).max(1).optional(),
+        }).optional().describe("Color for SOLID paints (RGBA values 0-1). If omitted with boundVariables.color, the color is auto-resolved from the variable."),
         boundVariables: z.object({
           color: z.object({
             type: z.string().optional(),
-            variableId: z.string().describe("The ID of the variable to bind to the color in the format like VariableID:3:4"),
+            variableId: z.string().optional().describe("The ID of the variable to bind to the color in the format like VariableID:3:4"),
+            id: z.string().optional().describe("Alias for variableId (either field accepted)"),
         }).describe("Optional bound variables for the paint").optional(),
-      }).catchall(z.unknown())
-  })
+      }).catchall(z.unknown()).optional(),
+  }).passthrough()
     .describe(
       "Array of Paint objects. Each object must conform to the Paint interface: type, opacity, color, gradientStops, scaleMode, imageHash, etc."
     )),
@@ -845,16 +852,17 @@ server.tool(
 // Move Node Tool
 server.tool(
   "move_node",
-  "Move a node to a new position and/or reparent it under a different parent in Figma. When parentId is provided, the node is appended as the last child of the new parent. Position (x, y) is optional — if omitted, the node keeps its current coordinates.",
+  "Move a node to a new position and/or reparent it under a different parent in Figma. When parentId is provided, the node is inserted at the given index (0 = first child) or appended as the last child if index is omitted. Position (x, y) is optional — if omitted, the node keeps its current coordinates.",
   {
     nodeId: z.string().describe("The ID of the node to move"),
     x: z.number().optional().describe("New X position (optional if only reparenting)"),
     y: z.number().optional().describe("New Y position (optional if only reparenting)"),
-    parentId: z.string().optional().describe("ID of the new parent node to move this node into (reparent). The node will be appended as the last child."),
+    parentId: z.string().optional().describe("ID of the new parent node to move this node into (reparent)."),
+    index: z.number().int().min(0).optional().describe("Insertion index within the new parent (0 = first child). If omitted, the node is appended as the last child."),
   },
-  async ({ nodeId, x, y, parentId }: any) => {
+  async ({ nodeId, x, y, parentId, index }: any) => {
     try {
-      const result = await sendCommandToFigma("move_node", { nodeId, x, y, parentId });
+      const result = await sendCommandToFigma("move_node", { nodeId, x, y, parentId, index });
       const typedResult = result as { name: string; x: number; y: number; parentName?: string };
       const parts = [];
       if (parentId) parts.push(`reparented under "${typedResult.parentName}"`);

@@ -1244,7 +1244,7 @@ async function setStrokeColor(params) {
 }
 
 async function moveNode(params) {
-  const { nodeId, x, y, parentId } = params || {};
+  const { nodeId, x, y, parentId, index } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -1268,7 +1268,11 @@ async function moveNode(params) {
     if (!("appendChild" in newParent)) {
       throw new Error(`Parent node does not support children: ${parentId} (type: ${newParent.type})`);
     }
-    newParent.appendChild(node);
+    if (index !== undefined && index >= 0) {
+      newParent.insertChild(index, node);
+    } else {
+      newParent.appendChild(node);
+    }
   }
 
   // Set position if provided
@@ -3731,8 +3735,18 @@ async function setNodePaints(params) {
   if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
   if (!(paintsType in node)) throw new Error(`Node does not support ${paintsType}: ${nodeId}`);
 
+  // Track variable binding requests (applied after paints are set on node)
+  var bindingRequests = [];
+
   // Validate and format each paint object asynchronously
-  const validatedPaints = await Promise.all(paints.map(async paint => {
+  const validatedPaints = await Promise.all(paints.map(async function(paint, paintIndex) {
+    // Normalize id -> variableId for backwards compatibility
+    if (paint.boundVariables && paint.boundVariables.color) {
+      if (!paint.boundVariables.color.variableId && paint.boundVariables.color.id) {
+        paint.boundVariables.color.variableId = paint.boundVariables.color.id;
+      }
+    }
+
     // Validate paint type
     if (!paint.type || !['SOLID', 'GRADIENT_LINEAR', 'GRADIENT_RADIAL', 
         'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND', 'IMAGE', 'VIDEO'].includes(paint.type)) {
@@ -3758,6 +3772,8 @@ async function setNodePaints(params) {
             },
             opacity: Number(paint.opacity || 1)
           };
+        } else if (!paint.color) {
+          throw new Error("SOLID paint requires either a 'color' field with {r, g, b} values (0-1 range), or 'boundVariables.color' with a variableId to resolve the color automatically.");
         } else {
           formattedPaint = {
             type: 'SOLID',
@@ -3806,24 +3822,42 @@ async function setNodePaints(params) {
         throw new Error(`Unsupported paint type: ${paint.type}`);
     }
 
-    if (paint.boundVariables && paint.boundVariables.color) {
-      const variableColor = await figma.variables.getVariableByIdAsync(paint.boundVariables.color.variableId);
-      try {
-        return figma.variables.setBoundVariableForPaint(formattedPaint, 'color', variableColor);
-      } catch (error) {
-        console.error(`Error setting bound variable for paint: ${error.message}`);
-        throw new Error(`Error setting ${formattedPaint}: ${error.message}`);
-      }
-    } else {
-      return formattedPaint;
+    // Collect binding request for post-assignment application
+    if (paint.boundVariables && paint.boundVariables.color && paint.boundVariables.color.variableId) {
+      bindingRequests.push({
+        index: paintIndex,
+        variableId: paint.boundVariables.color.variableId
+      });
     }
+
+    return formattedPaint;
   }));
 
-  // Apply validated paints
+  // Step 1: Apply validated paints (colors only, no bindings yet)
   try {
     node[paintsType] = validatedPaints;
   } catch (error) {
     throw new Error(`Error setting ${paintsType}: ${error.message}, ${JSON.stringify(validatedPaints, null, 2)}`);
+  }
+
+  // Step 2: Apply variable bindings on the node's actual paint objects.
+  // setBoundVariableForPaint only works reliably on paints read back from
+  // the node, not on hand-crafted plain objects.
+  for (var i = 0; i < bindingRequests.length; i++) {
+    var req = bindingRequests[i];
+    var variable = await figma.variables.getVariableByIdAsync(req.variableId);
+    if (!variable) {
+      throw new Error("Variable not found for binding: " + req.variableId);
+    }
+    try {
+      var currentPaints = node[paintsType].slice();
+      currentPaints[req.index] = figma.variables.setBoundVariableForPaint(
+        currentPaints[req.index], 'color', variable
+      );
+      node[paintsType] = currentPaints;
+    } catch (error) {
+      throw new Error("Error binding variable to " + paintsType + "[" + req.index + "]: " + error.message);
+    }
   }
 
   return {
@@ -5771,6 +5805,9 @@ async function setPadding(params) {
   }
 
   // Check if node is a frame or component that supports padding
+  if (node.type === "TEXT") {
+    throw new Error("Node type TEXT does not support padding. Wrap the text node in an auto-layout frame and apply padding to the wrapper frame instead.");
+  }
   if (
     node.type !== "FRAME" &&
     node.type !== "COMPONENT" &&
@@ -5893,6 +5930,9 @@ async function setLayoutSizing(params) {
   }
 
   // Check if node is a frame or component that supports layout sizing
+  if (node.type === "TEXT") {
+    throw new Error("Node type TEXT does not support layout sizing. Text nodes auto-size based on content. To achieve FILL behavior, wrap the text in an auto-layout frame and set FILL on the wrapper instead.");
+  }
   if (
     node.type !== "FRAME" &&
     node.type !== "COMPONENT" &&
@@ -5905,7 +5945,7 @@ async function setLayoutSizing(params) {
   // Check if the node has auto-layout enabled
   if (node.layoutMode === "NONE") {
     throw new Error(
-      "Layout sizing can only be set on auto-layout frames (layoutMode must not be NONE)"
+      "Layout sizing requires auto-layout. This node has layoutMode=NONE. Either enable auto-layout first (set_auto_layout), or note that non-auto-layout frames like divider components cannot use FILL/HUG sizing."
     );
   }
 
