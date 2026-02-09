@@ -566,6 +566,11 @@ async function getNodeInfoDetailed(nodeId) {
       result.pluginData = { source: source };
     }
 
+    // Add dashPattern if set (for dashed/dotted strokes)
+    if ("dashPattern" in node && node.dashPattern && node.dashPattern.length > 0) {
+      result.dashPattern = node.dashPattern;
+    }
+
     // Heuristic: a FRAME whose descendant tree is all vector/group types is likely an SVG
     var svgTypes = ["VECTOR", "BOOLEAN_OPERATION", "LINE", "ELLIPSE", "STAR", "REGULAR_POLYGON", "GROUP", "FRAME"];
     if (node.type === "FRAME" && "children" in node && node.children.length > 0) {
